@@ -1,0 +1,12 @@
+[package]
+name = "oddio"
+version = "0.1.0"
+authors = ["Benjamin Saunders <ben.e.saunders@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+slab = "0.4"
+na = { package = "nalgebra", version = "0.18" }
+
+[dev-dependencies]
+cpal = "0.10"
