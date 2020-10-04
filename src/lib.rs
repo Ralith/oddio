@@ -1,10 +1,30 @@
 #![warn(missing_docs)]
 //! A library for playing 3D audio in real time
 
+pub mod source;
+pub mod resample;
+
 use std::cmp;
 use std::sync::Arc;
 
 use slab::Slab;
+
+/// Sampling time
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord)]
+pub struct Time(i32);
+
+impl std::ops::Sub for Time {
+    type Output = i32;
+    fn sub(self, rhs: Time) -> i32 {
+        self.0.wrapping_sub(rhs.0)
+    }
+}
+
+impl PartialOrd for Time {
+    fn partial_cmp(&self, other: &Time) -> Option<cmp::Ordering> {
+        self.0.wrapping_sub(other.0).partial_cmp(&0)
+    }
+}
 
 /// A collection of spatialized sources that can be heard together
 pub struct Scene {
