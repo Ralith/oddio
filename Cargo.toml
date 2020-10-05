@@ -5,8 +5,7 @@ authors = ["Benjamin Saunders <ben.e.saunders@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-slab = "0.4"
-na = { package = "nalgebra", version = "0.18" }
+mint = "0.5.5"
 
 [dev-dependencies]
-cpal = "0.10"
+cpal = "0.12.1"
