@@ -53,9 +53,9 @@ impl Sound {
         self.rate
     }
 
-    pub(crate) fn sample(&self, s: f32) -> f32 {
+    pub(crate) fn sample(&self, s: f64) -> f32 {
         let x0 = s.floor() as isize;
-        let fract = s.fract();
+        let fract = s.fract() as f32;
         let x1 = x0 + 1;
         self.get(x0) * (1.0 - fract) + self.get(x1) * fract
     }
