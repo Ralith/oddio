@@ -1,72 +1,90 @@
+use std::ops::{Index, IndexMut};
+
 use crate::{Sample, Sound};
 
 /// State of the playback of a single sound for a single listener
-pub struct State {
-    /// Point at which the listener most recently sampled this sound
-    t: Option<f64>,
-}
+#[derive(Debug, Clone)]
+pub struct State([EarState; 2]);
 
 impl State {
-    pub fn new() -> Self {
-        Self { t: None }
+    pub fn new(position_wrt_listener: mint::Point3<f32>) -> Self {
+        Self([
+            EarState::new(position_wrt_listener, Ear::Left),
+            EarState::new(position_wrt_listener, Ear::Right),
+        ])
     }
 }
 
-impl Default for State {
-    fn default() -> Self {
-        Self::new()
+#[derive(Debug, Clone)]
+struct EarState {
+    /// Point at which the listener most recently sampled this sound
+    t: f64,
+    /// Attenuation at that point
+    attenuation: f32,
+}
+
+impl EarState {
+    fn new(position_wrt_listener: mint::Point3<f32>, ear: Ear) -> Self {
+        let distance = norm(sub(position_wrt_listener, ear.pos()));
+        let delay = distance * (-1.0 / SPEED_OF_SOUND);
+        let distance_attenuation = 1.0 / distance.max(0.1);
+        let head_occlusion = if distance == 0.0 {
+            0.5
+        } else {
+            dot(
+                ear.dir(),
+                scale(position_wrt_listener.into(), 1.0 / distance),
+            )
+            .max(0.5)
+        };
+        Self {
+            t: delay.into(),
+            attenuation: head_occlusion * distance_attenuation,
+        }
     }
 }
 
 /// Helper for mixing sounds into a unified scene from a listener's point of view
+///
+/// Cheap to construct; make fresh ones as needed.
 pub struct Mixer<'a> {
     /// Output samples
-    pub samples: &'a mut [Sample],
+    pub samples: &'a mut [[Sample; 2]],
     /// Sample rate
     pub rate: u32,
-    /// Velocity of the listener with respect to the medium
-    pub velocity: mint::Vector3<f32>,
 }
 
 impl<'a> Mixer<'a> {
+    pub fn new(sample_rate: u32, samples: &'a mut [[Sample; 2]]) -> Self {
+        Self {
+            samples,
+            rate: sample_rate,
+        }
+    }
+
     /// Mix in sound from a single input
-    pub fn mix(&mut self, input: Input<'_>) {
-        let distance = norm(input.position_wrt_listener.into());
-        // Ratio to scale playback speed by to produce doppler effect
-        let doppler_shift = {
-            if distance == 0.0 {
-                1.0
-            } else {
-                let dir = mint::Vector3 {
-                    x: input.position_wrt_listener.x / distance,
-                    y: input.position_wrt_listener.y / distance,
-                    z: input.position_wrt_listener.z / distance,
-                };
-                let out_speed = dot(dir, self.velocity);
-                let src_speed = dot(dir, input.velocity);
-                let sign = src_speed.signum();
-                (SPEED_OF_SOUND - sign * out_speed) / (SPEED_OF_SOUND + src_speed)
-            }
-        };
-        // Amount of time covered by output
-        let dt = self.samples.len() as f64 / f64::from(self.rate);
-        // Signed length of interval to play from src
-        let src_dt = f64::from(doppler_shift) * dt;
-        // Time at src corresponding to the first output sample
-        let src_start = input.state.t.unwrap_or_else(|| {
-            let delay = distance * (-1.0 / SPEED_OF_SOUND);
-            -f64::from(delay)
-        });
+    pub fn mix(&mut self, mut input: Input<'_>) {
+        self.mix_mono(&mut input, Ear::Left);
+        self.mix_mono(&mut input, Ear::Right);
+    }
 
-        // Number of sample steps to advance per output step. May be negative.
-        let step_size = src_dt / self.samples.len() as f64;
+    fn mix_mono(&mut self, input: &mut Input<'_>, ear: Ear) {
+        let state = &input.state[ear];
+        let mut next_state = EarState::new(input.position_wrt_listener, ear);
+        next_state.t += input.t;
 
+        let t_step = 1.0 / self.samples.len() as f64;
+        let d_samples = (next_state.t - state.t) * f64::from(input.sound.rate());
+        let d_attenuation = next_state.attenuation - state.attenuation;
+
+        let start_sample = state.t * f64::from(input.sound.rate());
         for (i, x) in self.samples.iter_mut().enumerate() {
-            let t = src_start + i as f64 * step_size;
-            *x = input.sound.sample(t * f64::from(input.sound.rate())) / distance;
+            let t = i as f64 * t_step;
+            x[ear as usize] = input.sound.sample(start_sample + t * d_samples)
+                * (state.attenuation + t as f32 * d_attenuation);
         }
 
-        input.state.t = Some(src_start + src_dt);
+        input.state[ear] = next_state;
     }
 }
 
@@ -74,12 +92,12 @@ impl<'a> Mixer<'a> {
 pub struct Input<'a> {
     /// The sound data
     pub sound: &'a Sound,
+    /// How long `sound` has been playing for at the end of the output
+    pub t: f64,
     /// The playback state for the listener to mix for
     pub state: &'a mut State,
-    /// The position of the sound's source relative to the listener
+    /// The position at the end of the output
     pub position_wrt_listener: mint::Point3<f32>,
-    /// The velocity of the sound's source relative to the medium
-    pub velocity: mint::Vector3<f32>,
 }
 
 fn norm(x: mint::Vector3<f32>) -> f32 {
@@ -94,5 +112,61 @@ fn dot(x: mint::Vector3<f32>, y: mint::Vector3<f32>) -> f32 {
         .sum::<f32>()
 }
 
+fn scale(v: mint::Vector3<f32>, f: f32) -> mint::Vector3<f32> {
+    [v.x * f, v.y * f, v.z * f].into()
+}
+
+fn sub(a: mint::Point3<f32>, b: mint::Point3<f32>) -> mint::Vector3<f32> {
+    [a.x - b.x, a.y - b.y, a.z - b.z].into()
+}
+
+#[derive(Debug, Copy, Clone)]
+enum Ear {
+    Left,
+    Right,
+}
+
+impl Index<Ear> for State {
+    type Output = EarState;
+    fn index(&self, x: Ear) -> &EarState {
+        &self.0[x as usize]
+    }
+}
+
+impl IndexMut<Ear> for State {
+    fn index_mut(&mut self, x: Ear) -> &mut EarState {
+        &mut self.0[x as usize]
+    }
+}
+
+impl Ear {
+    fn pos(self) -> mint::Point3<f32> {
+        [
+            match self {
+                Ear::Left => -HEAD_RADIUS,
+                Ear::Right => HEAD_RADIUS,
+            },
+            0.0,
+            0.0,
+        ]
+        .into()
+    }
+
+    fn dir(self) -> mint::Vector3<f32> {
+        [
+            match self {
+                Ear::Left => -1.0,
+                Ear::Right => 1.0,
+            },
+            0.0,
+            0.0,
+        ]
+        .into()
+    }
+}
+
 /// Rate sound travels from sources to listeners (m/s)
 const SPEED_OF_SOUND: f32 = 343.0;
+
+/// Distance from center of head to an ear (m)
+const HEAD_RADIUS: f32 = 0.1075;
