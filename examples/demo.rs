@@ -33,6 +33,9 @@ fn main() {
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let samples = oddio::aggregate_stereo(data);
+                for s in &mut samples[..] {
+                    *s = [0.0, 0.0];
+                }
                 let n = samples.len();
                 let mut mixer = oddio::Mixer::new(sample_rate.0, samples);
                 let source = oddio::Sound {

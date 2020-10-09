@@ -82,7 +82,7 @@ impl<'a> Mixer<'a> {
         let step = 1.0 / self.samples.len() as f32;
         for (i, x) in self.samples.iter_mut().enumerate() {
             let t = i as f32 * step;
-            x[ear as usize] = input.source.sample(start_sample + t * d_samples)
+            x[ear as usize] += input.source.sample(start_sample + t * d_samples)
                 * (state.attenuation + t as f32 * d_attenuation);
         }
 
