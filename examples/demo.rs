@@ -16,7 +16,7 @@ fn main() {
         sample_rate,
         buffer_size: cpal::BufferSize::Fixed(sample_rate.0 / (1000 / BUFFER_SIZE_MS)),
     };
-    let boop = oddio::Sound::from_iter(
+    let boop = oddio::SoundData::from_iter(
         sample_rate.0,
         // Generate a simple sine wave
         (0..sample_rate.0 * DURATION_SECS).map(|i| {
@@ -33,14 +33,18 @@ fn main() {
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let samples = oddio::aggregate_stereo(data);
-                sample += samples.len();
-                let t = sample as f64 / sample_rate.0 as f64;
+                let n = samples.len();
                 let mut mixer = oddio::Mixer::new(sample_rate.0, samples);
+                let source = oddio::Sound {
+                    data: &boop,
+                    t: sample as f64,
+                };
+                sample += n;
+                let t = sample as f32 / sample_rate.0 as f32;
                 mixer.mix(oddio::Input {
-                    sound: &boop,
-                    t,
+                    source: &source,
                     state: &mut boop_state,
-                    position_wrt_listener: [-speed + speed * t as f32, 10.0, 0.0].into(),
+                    position_wrt_listener: [-speed + speed * t, 10.0, 0.0].into(),
                 });
             },
             move |err| {

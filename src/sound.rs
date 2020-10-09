@@ -4,23 +4,31 @@ use std::{
     ptr,
 };
 
-/// A sound that can be played back in a scene
+use crate::{Sample, Source};
+
+/// A finite sound
 #[derive(Debug)]
-pub struct Sound {
+pub struct SoundData {
     rate: u32,
     samples: [Sample],
 }
 
-impl Sound {
+impl SoundData {
     pub fn from_slice(rate: u32, samples: &[Sample]) -> Box<Self> {
-        let align = mem::align_of::<Sample>().max(4); // Also the size of the header with padding
-        let layout =
-            alloc::Layout::from_size_align(align + mem::size_of::<Sample>() * samples.len(), align)
-                .unwrap();
+        let header_layout = alloc::Layout::new::<u32>();
+        let (layout, payload_offset) = header_layout
+            .extend(
+                alloc::Layout::from_size_align(
+                    mem::size_of::<Sample>() * samples.len(),
+                    mem::align_of::<Sample>(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
         unsafe {
             let mem = alloc::alloc(layout);
             mem.cast::<u32>().write(rate);
-            let payload = mem.add(align).cast::<Sample>();
+            let payload = mem.add(payload_offset).cast::<Sample>();
             for (i, &x) in samples.iter().enumerate() {
                 payload.add(i).write(x);
             }
@@ -35,13 +43,20 @@ impl Sound {
     {
         let iter = iter.into_iter();
         let len = iter.len();
-        let align = mem::align_of::<Sample>().max(4); // Also the size of the header with padding
-        let layout =
-            alloc::Layout::from_size_align(align + mem::size_of::<Sample>() * len, align).unwrap();
+        let header_layout = alloc::Layout::new::<u32>();
+        let (layout, payload_offset) = header_layout
+            .extend(
+                alloc::Layout::from_size_align(
+                    mem::size_of::<Sample>() * len,
+                    mem::align_of::<Sample>(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
         unsafe {
             let mem = alloc::alloc(layout);
             mem.cast::<u32>().write(rate);
-            let payload = mem.add(align).cast::<Sample>();
+            let payload = mem.add(payload_offset).cast::<Sample>();
             for (i, x) in iter.enumerate() {
                 payload.add(i).write(x);
             }
@@ -54,7 +69,7 @@ impl Sound {
     }
 
     pub(crate) fn sample(&self, s: f64) -> f32 {
-        let x0 = s.floor() as isize;
+        let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
         self.get(x0) * (1.0 - fract) + self.get(x1) * fract
@@ -72,18 +87,31 @@ impl Sound {
     }
 }
 
-impl Deref for Sound {
+impl Deref for SoundData {
     type Target = [Sample];
     fn deref(&self) -> &[Sample] {
         &self.samples
     }
 }
 
-impl DerefMut for Sound {
+impl DerefMut for SoundData {
     fn deref_mut(&mut self) -> &mut [Sample] {
         &mut self.samples
     }
 }
 
-/// Type of samples making up a sound
-pub type Sample = f32;
+pub struct Sound<'a> {
+    pub data: &'a SoundData,
+    pub t: f64,
+}
+
+impl Source for Sound<'_> {
+    fn rate(&self) -> u32 {
+        self.data.rate
+    }
+
+    fn sample(&self, t: f32) -> f32 {
+        let s = self.t + f64::from(t);
+        self.data.sample(s)
+    }
+}

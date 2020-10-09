@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use crate::{Sample, Sound};
+use crate::{Sample, Source};
 
 /// State of the playback of a single sound for a single listener
 #[derive(Debug, Clone)]
@@ -17,9 +17,9 @@ impl State {
 
 #[derive(Debug, Clone)]
 struct EarState {
-    /// Point at which the listener most recently sampled this sound
-    t: f64,
-    /// Attenuation at that point
+    /// How far behind current this sound was most recently sampled
+    delay: f32,
+    /// Attenuation most recently applied
     attenuation: f32,
 }
 
@@ -38,7 +38,7 @@ impl EarState {
             .max(0.5)
         };
         Self {
-            t: delay.into(),
+            delay,
             attenuation: head_occlusion * distance_attenuation,
         }
     }
@@ -63,24 +63,26 @@ impl<'a> Mixer<'a> {
     }
 
     /// Mix in sound from a single input
-    pub fn mix(&mut self, mut input: Input<'_>) {
+    pub fn mix(&mut self, mut input: Input<'_, impl Source>) {
         self.mix_mono(&mut input, Ear::Left);
         self.mix_mono(&mut input, Ear::Right);
     }
 
-    fn mix_mono(&mut self, input: &mut Input<'_>, ear: Ear) {
+    fn mix_mono(&mut self, input: &mut Input<'_, impl Source>, ear: Ear) {
         let state = &input.state[ear];
-        let mut next_state = EarState::new(input.position_wrt_listener, ear);
-        next_state.t += input.t;
+        let next_state = EarState::new(input.position_wrt_listener, ear);
+        let t0 = state.delay;
+        let dt = self.samples.len() as f32 / self.rate as f32;
+        let t1 = next_state.delay + dt;
 
-        let t_step = 1.0 / self.samples.len() as f64;
-        let d_samples = (next_state.t - state.t) * f64::from(input.sound.rate());
+        let d_samples = (t1 - t0) * input.source.rate() as f32;
         let d_attenuation = next_state.attenuation - state.attenuation;
 
-        let start_sample = state.t * f64::from(input.sound.rate());
+        let start_sample = t0 * input.source.rate() as f32;
+        let step = 1.0 / self.samples.len() as f32;
         for (i, x) in self.samples.iter_mut().enumerate() {
-            let t = i as f64 * t_step;
-            x[ear as usize] = input.sound.sample(start_sample + t * d_samples)
+            let t = i as f32 * step;
+            x[ear as usize] = input.source.sample(start_sample + t * d_samples)
                 * (state.attenuation + t as f32 * d_attenuation);
         }
 
@@ -89,11 +91,9 @@ impl<'a> Mixer<'a> {
 }
 
 /// Characterization of a sound to be mixed for a particular listener
-pub struct Input<'a> {
-    /// The sound data
-    pub sound: &'a Sound,
-    /// How long `sound` has been playing for at the end of the output
-    pub t: f64,
+pub struct Input<'a, T> {
+    /// The sound source to play
+    pub source: &'a T,
     /// The playback state for the listener to mix for
     pub state: &'a mut State,
     /// The position at the end of the output
