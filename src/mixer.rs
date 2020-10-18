@@ -63,12 +63,12 @@ impl<'a> Mixer<'a> {
     }
 
     /// Mix in sound from a single input
-    pub fn mix(&mut self, mut input: Input<'_, impl Source>) {
+    pub fn mix(&mut self, mut input: Input<'_, impl Source + ?Sized>) {
         self.mix_mono(&mut input, Ear::Left);
         self.mix_mono(&mut input, Ear::Right);
     }
 
-    fn mix_mono(&mut self, input: &mut Input<'_, impl Source>, ear: Ear) {
+    fn mix_mono(&mut self, input: &mut Input<'_, impl Source + ?Sized>, ear: Ear) {
         let state = &input.state[ear];
         let next_state = EarState::new(input.position_wrt_listener, ear);
         let t0 = state.delay;
@@ -91,7 +91,7 @@ impl<'a> Mixer<'a> {
 }
 
 /// Characterization of a sound to be mixed for a particular listener
-pub struct Input<'a, T> {
+pub struct Input<'a, T: ?Sized> {
     /// The sound source to play
     pub source: &'a T,
     /// The playback state for the listener to mix for
