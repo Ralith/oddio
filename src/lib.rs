@@ -1,10 +1,13 @@
 mod mixer;
 mod sound;
+mod spsc;
+pub mod stream;
 mod source;
 
 pub use mixer::*;
 pub use sound::*;
 pub use source::*;
+pub use stream::stream;
 
 /// Type of samples making up a sound
 pub type Sample = f32;
