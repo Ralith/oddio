@@ -8,12 +8,12 @@ use crate::{Sample, Source};
 
 /// A finite sound
 #[derive(Debug)]
-pub struct SoundData {
+pub struct Samples {
     rate: u32,
     samples: [Sample],
 }
 
-impl SoundData {
+impl Samples {
     pub fn from_slice(rate: u32, samples: &[Sample]) -> Box<Self> {
         let header_layout = alloc::Layout::new::<u32>();
         let (layout, payload_offset) = header_layout
@@ -87,25 +87,27 @@ impl SoundData {
     }
 }
 
-impl Deref for SoundData {
+impl Deref for Samples {
     type Target = [Sample];
     fn deref(&self) -> &[Sample] {
         &self.samples
     }
 }
 
-impl DerefMut for SoundData {
+impl DerefMut for Samples {
     fn deref_mut(&mut self) -> &mut [Sample] {
         &mut self.samples
     }
 }
 
-pub struct Sound<'a> {
-    pub data: &'a SoundData,
+pub struct SamplesSource<'a> {
+    /// Samples to play
+    pub data: &'a Samples,
+    /// Position to begin playback at, in samples
     pub t: f64,
 }
 
-impl Source for Sound<'_> {
+impl Source for SamplesSource<'_> {
     fn rate(&self) -> u32 {
         self.data.rate
     }

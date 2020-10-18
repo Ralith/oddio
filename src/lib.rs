@@ -1,11 +1,11 @@
 mod mixer;
-mod sound;
+mod samples;
+mod source;
 mod spsc;
 pub mod stream;
-mod source;
 
 pub use mixer::*;
-pub use sound::*;
+pub use samples::*;
 pub use source::*;
 pub use stream::stream;
 

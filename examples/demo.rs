@@ -16,12 +16,12 @@ fn main() {
         sample_rate,
         buffer_size: cpal::BufferSize::Fixed(sample_rate.0 / (1000 / BUFFER_SIZE_MS)),
     };
-    let boop = oddio::SoundData::from_iter(
+    let boop = oddio::Samples::from_iter(
         sample_rate.0,
         // Generate a simple sine wave
         (0..sample_rate.0 * DURATION_SECS).map(|i| {
             let t = i as f32 / sample_rate.0 as f32;
-            (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 8.0
+            (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
 
@@ -38,7 +38,7 @@ fn main() {
                 }
                 let n = samples.len();
                 let mut mixer = oddio::Mixer::new(sample_rate.0, samples);
-                let source = oddio::Sound {
+                let source = oddio::SamplesSource {
                     data: &boop,
                     t: sample as f64,
                 };
