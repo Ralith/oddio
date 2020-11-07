@@ -140,6 +140,7 @@ impl IndexMut<Ear> for State {
 }
 
 impl Ear {
+    /// Location of the ear wrt a head facing -Z
     fn pos(self) -> mint::Point3<f32> {
         [
             match self {
@@ -152,6 +153,7 @@ impl Ear {
         .into()
     }
 
+    /// Unit vector along which sound is least attenuated
     fn dir(self) -> mint::Vector3<f32> {
         [
             match self {
