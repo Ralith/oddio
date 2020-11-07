@@ -85,13 +85,7 @@ impl<T> Receiver<T> {
     /// Extend with newly sent items
     pub fn update(&mut self) {
         let old_len = self.len;
-        let read = self.shared.header.read.load(Ordering::Relaxed);
-        let write = self.shared.header.write.load(Ordering::Acquire);
-        self.len = if write >= read {
-            write - read
-        } else {
-            write + self.shared.data.len() - read
-        };
+        self.len = self.shared.readable_len();
         debug_assert!(self.len >= old_len);
     }
 
@@ -99,18 +93,9 @@ impl<T> Receiver<T> {
     pub fn release(&mut self, n: usize) {
         debug_assert!(n <= self.len);
         let n = self.len.min(n);
-        let read = self.shared.header.read.load(Ordering::Relaxed);
-        for i in 0..n {
-            unsafe {
-                ptr::drop_in_place(
-                    (*self.shared.data[(read + i) % self.shared.data.len()].get()).as_mut_ptr(),
-                );
-            }
+        unsafe {
+            self.shared.release(n);
         }
-        self.shared
-            .header
-            .read
-            .store((read + n) % self.shared.data.len(), Ordering::Relaxed);
         self.len -= n;
     }
 }
@@ -161,6 +146,32 @@ impl<T> Shared<T> {
             });
             Box::from_raw(ptr::slice_from_raw_parts_mut(mem, capacity) as *mut Self).into()
         }
+    }
+
+    fn readable_len(&self) -> usize {
+        let read = self.header.read.load(Ordering::Relaxed);
+        let write = self.header.write.load(Ordering::Acquire);
+        if write >= read {
+            write - read
+        } else {
+            write + self.data.len() - read
+        }
+    }
+
+    unsafe fn release(&self, n: usize) {
+        let read = self.header.read.load(Ordering::Relaxed);
+        for i in 0..n {
+            ptr::drop_in_place((*self.data[(read + i) % self.data.len()].get()).as_mut_ptr());
+        }
+        self.header
+            .read
+            .store((read + n) % self.data.len(), Ordering::Relaxed);
+    }
+}
+
+impl<T> Drop for Shared<T> {
+    fn drop(&mut self) {
+        unsafe { self.release(self.readable_len()) }
     }
 }
 
