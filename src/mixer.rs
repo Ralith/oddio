@@ -25,21 +25,17 @@ struct EarState {
 
 impl EarState {
     fn new(position_wrt_listener: mint::Point3<f32>, ear: Ear) -> Self {
-        let distance = norm(sub(position_wrt_listener, ear.pos()));
+        let distance = norm(sub(position_wrt_listener, ear.pos())).max(0.1);
         let delay = distance * (-1.0 / SPEED_OF_SOUND);
-        let distance_attenuation = 1.0 / distance.max(0.1);
-        let head_occlusion = if distance == 0.0 {
-            0.5
-        } else {
-            dot(
+        let distance_attenuation = 1.0 / distance;
+        let stereo_attenuation = 1.0
+            + dot(
                 ear.dir(),
                 scale(position_wrt_listener.into(), 1.0 / distance),
-            )
-            .max(0.5)
-        };
+            );
         Self {
             delay,
-            attenuation: head_occlusion * distance_attenuation,
+            attenuation: stereo_attenuation * distance_attenuation,
         }
     }
 }
