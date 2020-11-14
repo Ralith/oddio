@@ -14,4 +14,9 @@ pub trait Source {
     /// Future calls to `sample` will behave as if `dt` were added to the argument, potentially with
     /// extra precision
     fn advance(&mut self, dt: f32);
+
+    /// Time, in samples, from the current instant to the end
+    ///
+    /// May be negative or infinite.
+    fn remaining(&self) -> f32;
 }

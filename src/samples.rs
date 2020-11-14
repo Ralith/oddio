@@ -130,4 +130,8 @@ impl Source for SamplesSource {
     fn advance(&mut self, dt: f32) {
         self.t += f64::from(dt);
     }
+
+    fn remaining(&self) -> f32 {
+        (self.data.len() as f64 - self.t) as f32
+    }
 }

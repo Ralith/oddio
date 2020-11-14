@@ -87,6 +87,10 @@ impl Source for Receiver {
             self.t -= excess;
         }
     }
+
+    fn remaining(&self) -> f32 {
+        f32::INFINITY
+    }
 }
 
 #[cfg(test)]
