@@ -120,6 +120,10 @@ impl<T> Receiver<T> {
         }
         self.len -= n;
     }
+
+    pub fn drain(&mut self) -> Drain<'_, T> {
+        Drain { recv: self }
+    }
 }
 
 impl<T> Index<usize> for Receiver<T> {
@@ -200,6 +204,38 @@ impl<T> Drop for Shared<T> {
 struct Header {
     read: AtomicUsize,
     write: AtomicUsize,
+}
+
+pub struct Drain<'a, T> {
+    recv: &'a mut Receiver<T>,
+}
+
+impl<'a, T> Iterator for Drain<'a, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        if self.recv.len == 0 {
+            return None;
+        }
+        let read = self.recv.shared.header.read.load(Ordering::Relaxed);
+        let value = unsafe { (*self.recv.shared.data[read].get()).as_ptr().read() };
+        self.recv
+            .shared
+            .header
+            .read
+            .store((read + 1) % self.recv.shared.data.len(), Ordering::Relaxed);
+        self.recv.len -= 1;
+        Some(value)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.recv.len, Some(self.recv.len))
+    }
+}
+
+impl<'a, T> ExactSizeIterator for Drain<'a, T> {
+    fn len(&self) -> usize {
+        self.recv.len
+    }
 }
 
 #[cfg(test)]
