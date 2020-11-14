@@ -73,6 +73,24 @@ impl<T> Sender<T> {
     pub fn capacity(&self) -> usize {
         self.shared.data.len() - 1
     }
+
+    /// Append a single item, leaving at least `reserve_slots` for future use
+    pub fn send(&mut self, data: T, reserve_slots: usize) -> Result<(), T> {
+        let write = self.shared.header.write.load(Ordering::Relaxed);
+        let read = self.shared.header.read.load(Ordering::Relaxed);
+        let size = self.shared.data.len();
+        if ((write + reserve_slots + 1) % size).wrapping_sub(read) < reserve_slots + 1 {
+            return Err(data);
+        }
+        unsafe {
+            *self.shared.data[write].get() = MaybeUninit::new(data);
+        }
+        self.shared
+            .header
+            .write
+            .store((write + 1) % size, Ordering::Release);
+        Ok(())
+    }
 }
 
 pub struct Receiver<T> {
