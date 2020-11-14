@@ -35,8 +35,8 @@ impl<T> Sender<T> {
     {
         let write = self.shared.header.write.load(Ordering::Relaxed);
         let read = self.shared.header.read.load(Ordering::Relaxed);
+        let size = self.shared.data.len();
         unsafe {
-            let size = self.shared.data.len();
             let base = self.shared.data.as_ptr() as *mut T;
             let free = if write < read {
                 (
@@ -68,6 +68,10 @@ impl<T> Sender<T> {
                 .store((write + n) % size, Ordering::Release);
             n
         }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.shared.data.len() - 1
     }
 }
 
