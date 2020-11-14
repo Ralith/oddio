@@ -2,6 +2,7 @@ use std::{
     alloc, mem,
     ops::{Deref, DerefMut},
     ptr,
+    sync::Arc,
 };
 
 use crate::{Sample, Source};
@@ -14,7 +15,7 @@ pub struct Samples {
 }
 
 impl Samples {
-    pub fn from_slice(rate: u32, samples: &[Sample]) -> Box<Self> {
+    pub fn from_slice(rate: u32, samples: &[Sample]) -> Arc<Self> {
         let header_layout = alloc::Layout::new::<u32>();
         let (layout, payload_offset) = header_layout
             .extend(
@@ -32,11 +33,11 @@ impl Samples {
             for (i, &x) in samples.iter().enumerate() {
                 payload.add(i).write(x);
             }
-            Box::from_raw(ptr::slice_from_raw_parts_mut(mem, samples.len()) as *mut Self)
+            Box::from_raw(ptr::slice_from_raw_parts_mut(mem, samples.len()) as *mut Self).into()
         }
     }
 
-    pub fn from_iter<T>(rate: u32, iter: T) -> Box<Self>
+    pub fn from_iter<T>(rate: u32, iter: T) -> Arc<Self>
     where
         T: IntoIterator<Item = Sample>,
         T::IntoIter: ExactSizeIterator,
@@ -60,7 +61,7 @@ impl Samples {
             for (i, x) in iter.enumerate() {
                 payload.add(i).write(x);
             }
-            Box::from_raw(ptr::slice_from_raw_parts_mut(mem, len) as *mut Self)
+            Box::from_raw(ptr::slice_from_raw_parts_mut(mem, len) as *mut Self).into()
         }
     }
 
@@ -100,14 +101,23 @@ impl DerefMut for Samples {
     }
 }
 
-pub struct SamplesSource<'a> {
+pub struct SamplesSource {
     /// Samples to play
-    pub data: &'a Samples,
+    data: Arc<Samples>,
     /// Position to begin playback at, in samples
-    pub t: f64,
+    t: f64,
 }
 
-impl Source for SamplesSource<'_> {
+impl SamplesSource {
+    pub fn new(data: Arc<Samples>, start_sample: f64) -> Self {
+        Self {
+            data,
+            t: start_sample,
+        }
+    }
+}
+
+impl Source for SamplesSource {
     fn rate(&self) -> u32 {
         self.data.rate
     }
@@ -115,5 +125,9 @@ impl Source for SamplesSource<'_> {
     fn sample(&self, t: f32) -> f32 {
         let s = self.t + f64::from(t);
         self.data.sample(s)
+    }
+
+    fn advance(&mut self, dt: f32) {
+        self.t += f64::from(dt);
     }
 }

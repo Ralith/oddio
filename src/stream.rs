@@ -52,18 +52,6 @@ impl Receiver {
         self.inner.update();
     }
 
-    /// Move the playback cursor forward by `samples`
-    pub fn advance(&mut self, samples: f32) {
-        // TODO: Clamp such that a configurable amount of data remains at t >= 0, to allow repeating
-        // audio rather than gaps
-        self.t = (self.t + samples).min((self.inner.len() + self.past_size) as f32);
-        let excess = (self.t - self.past_size as f32).trunc();
-        if excess > 0.0 {
-            self.inner.release(excess as usize);
-            self.t -= excess;
-        }
-    }
-
     fn get(&self, sample: isize) -> f32 {
         if sample < 0 {
             return 0.0;
@@ -87,6 +75,17 @@ impl Source for Receiver {
         let fract = t.fract() as f32;
         let x1 = x0 + 1;
         self.get(x0) * (1.0 - fract) + self.get(x1) * fract
+    }
+
+    fn advance(&mut self, samples: f32) {
+        // TODO: Clamp such that a configurable amount of data remains at t >= 0, to allow repeating
+        // audio rather than gaps
+        self.t = (self.t + samples).min((self.inner.len() + self.past_size) as f32);
+        let excess = (self.t - self.past_size as f32).trunc();
+        if excess > 0.0 {
+            self.inner.release(excess as usize);
+            self.t -= excess;
+        }
     }
 }
 

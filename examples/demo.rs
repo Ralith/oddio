@@ -1,6 +1,7 @@
 use std::{thread, time::Duration};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use oddio::Source;
 
 const DURATION_SECS: u32 = 6;
 const BUFFER_SIZE_MS: u32 = 100;
@@ -24,6 +25,7 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
+    let mut source = oddio::SamplesSource::new(boop, 0.0);
 
     let speed = 50.0;
     let mut boop_state = oddio::State::new([-speed, 10.0, 0.0].into());
@@ -38,10 +40,6 @@ fn main() {
                 }
                 let n = samples.len();
                 let mut mixer = oddio::Mixer::new(sample_rate.0, samples);
-                let source = oddio::SamplesSource {
-                    data: &boop,
-                    t: sample as f64,
-                };
                 sample += n;
                 let t = sample as f32 / sample_rate.0 as f32;
                 mixer.mix(oddio::Input {
@@ -49,6 +47,7 @@ fn main() {
                     state: &mut boop_state,
                     position_wrt_listener: [-speed + speed * t, 10.0, 0.0].into(),
                 });
+                source.advance(n as f32);
             },
             move |err| {
                 eprintln!("{}", err);

@@ -1,4 +1,5 @@
 use std::{fs::File, path::Path};
+use oddio::Source;
 
 const DURATION_SECS: u32 = 6;
 const RATE: u32 = 44100;
@@ -14,6 +15,7 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
+    let mut boop = oddio::SamplesSource::new(boop, 0.0);
     let mut boop_state = oddio::State::new([-SPEED, 10.0, 0.0].into());
 
     let mut samples = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
@@ -24,13 +26,11 @@ fn main() {
             rate: RATE,
         };
         mixer.mix(oddio::Input {
-            source: &oddio::SamplesSource {
-                data: &boop,
-                t: (i * FRAME_SIZE) as f64,
-            },
+            source: &boop,
             state: &mut boop_state,
             position_wrt_listener: [-SPEED + SPEED * t as f32, 10.0, 0.0].into(),
         });
+        boop.advance(FRAME_SIZE as f32);
     }
 
     let track = wav::BitDepth::Sixteen(
