@@ -18,6 +18,7 @@ pub fn worker() -> Builder {
     Builder { max_delay: 4.0 }
 }
 
+/// Configuration that audio workers are built from
 #[must_use]
 #[derive(Debug, Clone)]
 pub struct Builder {
@@ -35,6 +36,7 @@ impl Builder {
         self
     }
 
+    /// Construct a remote control and the worker it controls from this configuration
     #[must_use]
     pub fn build(&self) -> (Remote, Worker) {
         let (send, recv) = spsc::channel(127);
@@ -56,6 +58,7 @@ impl Builder {
     }
 }
 
+/// Handle for controlling a `Worker` from another thread
 pub struct Remote {
     sender: spsc::Sender<Msg>,
     sources: Arc<SourceTable>,
@@ -63,6 +66,7 @@ pub struct Remote {
 }
 
 impl Remote {
+    /// Begin playing `source`, returning an ID that can be used to manipulate its playback
     pub fn play<S: Source + 'static>(
         &mut self,
         mut source: S,
@@ -92,10 +96,15 @@ impl Remote {
         id
     }
 
+    /// Stop playing `source` and discard it
     pub fn stop(&mut self, source: SourceId) {
         self.send(Msg::Stop(source));
     }
 
+    /// Update the position and velocity of `source`
+    ///
+    /// Large discontinuities in position imply high velocities, which can lead to interesting
+    /// doppler effects even if the explicit velocities are small.
     pub fn set_motion(
         &mut self,
         source: SourceId,
@@ -136,12 +145,17 @@ impl Remote {
 
 unsafe impl Send for Remote {}
 
+/// Lightweight handle for a source actively being played on a worker
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct SourceId {
     index: u32,
     generation: u32,
 }
 
+/// Writes output audio samples on demand
+///
+/// For real-time audio, this should be passed into the audio worker thread, e.g. the data callback
+/// in cpal's `build_output_stream`.
 pub struct Worker {
     max_delay: f32,
     recv: spsc::Receiver<Msg>,
@@ -151,6 +165,9 @@ pub struct Worker {
 }
 
 impl Worker {
+    /// Write frames of stereo audio to `samples` for playback at `rate`
+    ///
+    /// Adds to the existing contents of `samples`. Be sure you zero it out first!
     pub fn render(&mut self, rate: u32, samples: &mut [[Sample; 2]]) {
         self.drain_msgs();
 

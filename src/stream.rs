@@ -1,3 +1,5 @@
+//! Streaming audio support
+
 use crate::{spsc, Sample, Source};
 
 /// Construct an unbounded stream of dynamic audio
@@ -7,7 +9,7 @@ use crate::{spsc, Sample, Source};
 /// audio output.
 ///
 /// - `rate` is the stream's sample rate
-/// - `past_size` dictates the number of already-played samples to store. Governs the maximum
+/// - `past_size` dictates the number of already-played samples to store. Bounds the maximum
 ///   distance this stream can be heard from for a particular speed of sound.
 /// - `future_size` dictates how much storage is allocated for samples yet to be played. Governs the
 ///   maximum achievable latency. Should be at least large enough to fill one output buffer to avoid

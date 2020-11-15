@@ -7,7 +7,7 @@ use std::{
 
 use crate::{Sample, Source};
 
-/// A finite sound
+/// A sequence of audio samples at a particular rate
 #[derive(Debug)]
 pub struct Samples {
     rate: u32,
@@ -15,6 +15,7 @@ pub struct Samples {
 }
 
 impl Samples {
+    /// Construct samples from existing memory
     pub fn from_slice(rate: u32, samples: &[Sample]) -> Arc<Self> {
         let header_layout = alloc::Layout::new::<u32>();
         let (layout, payload_offset) = header_layout
@@ -37,6 +38,7 @@ impl Samples {
         }
     }
 
+    /// Generate samples from an iterator
     pub fn from_iter<T>(rate: u32, iter: T) -> Arc<Self>
     where
         T: IntoIterator<Item = Sample>,
@@ -65,6 +67,7 @@ impl Samples {
         }
     }
 
+    /// Number of samples per second
     pub fn rate(&self) -> u32 {
         self.rate
     }
@@ -101,6 +104,7 @@ impl DerefMut for Samples {
     }
 }
 
+/// An audio source backed by a static sequence of samples
 pub struct SamplesSource {
     /// Samples to play
     data: Arc<Samples>,
@@ -109,6 +113,7 @@ pub struct SamplesSource {
 }
 
 impl SamplesSource {
+    /// Create an audio source from some samples
     pub fn new(data: Arc<Samples>, start_sample: f64) -> Self {
         Self {
             data,
