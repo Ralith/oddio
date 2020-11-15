@@ -57,8 +57,16 @@ impl Builder {
     }
 }
 
+#[cfg(not(miri))]
 const INITIAL_CHANNEL_CAPACITY: usize = 127; // because the ring buffer wastes a slot
+#[cfg(not(miri))]
 const INITIAL_SOURCES_CAPACITY: usize = 128;
+
+// Smaller versions for the sake of runtime
+#[cfg(miri)]
+const INITIAL_CHANNEL_CAPACITY: usize = 3;
+#[cfg(miri)]
+const INITIAL_SOURCES_CAPACITY: usize = 4;
 
 impl Default for Builder {
     fn default() -> Self {
