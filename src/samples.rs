@@ -72,13 +72,15 @@ impl Samples {
         self.rate
     }
 
-    pub(crate) fn sample(&self, s: f64) -> f32 {
+    #[inline]
+    fn sample(&self, s: f64) -> f32 {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
         self.get(x0) * (1.0 - fract) + self.get(x1) * fract
     }
 
+    #[inline]
     fn get(&self, sample: isize) -> f32 {
         if sample < 0 {
             return 0.0;
@@ -126,19 +128,23 @@ impl SamplesSource {
 }
 
 impl Source for SamplesSource {
+    #[inline]
     fn rate(&self) -> u32 {
         self.data.rate
     }
 
+    #[inline]
     fn sample(&self, t: f32) -> f32 {
         let s = self.t + f64::from(t);
         self.data.sample(s)
     }
 
+    #[inline]
     fn advance(&mut self, dt: f32) {
         self.t += f64::from(dt);
     }
 
+    #[inline]
     fn remaining(&self) -> f32 {
         (self.data.len() as f64 - self.t) as f32
     }

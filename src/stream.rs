@@ -54,6 +54,7 @@ impl Receiver {
         self.inner.update();
     }
 
+    #[inline]
     fn get(&self, sample: isize) -> f32 {
         if sample < 0 {
             return 0.0;
@@ -67,10 +68,12 @@ impl Receiver {
 }
 
 impl Source for Receiver {
+    #[inline]
     fn rate(&self) -> u32 {
         self.rate
     }
 
+    #[inline]
     fn sample(&self, t: f32) -> f32 {
         let t = self.t + t;
         let x0 = t.trunc() as isize;
@@ -79,6 +82,7 @@ impl Source for Receiver {
         self.get(x0) * (1.0 - fract) + self.get(x1) * fract
     }
 
+    #[inline]
     fn advance(&mut self, samples: f32) {
         // TODO: Clamp such that a configurable amount of data remains at t >= 0, to allow repeating
         // audio rather than gaps
@@ -90,6 +94,7 @@ impl Source for Receiver {
         }
     }
 
+    #[inline]
     fn remaining(&self) -> f32 {
         f32::INFINITY
     }
