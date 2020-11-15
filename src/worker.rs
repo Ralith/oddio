@@ -449,6 +449,7 @@ fn process_source<S: Source>(
     state: &mut mixer::State,
     next_pos: mint::Point3<f32>,
 ) -> f32 {
+    source.prepare();
     mixer.mix(mixer::Input {
         source,
         state,

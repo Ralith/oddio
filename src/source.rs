@@ -19,4 +19,8 @@ pub trait Source {
     ///
     /// May be negative or infinite.
     fn remaining(&self) -> f32;
+
+    /// Called before a batch of samples is taken
+    #[inline]
+    fn prepare(&mut self) {}
 }

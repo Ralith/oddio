@@ -49,11 +49,6 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    /// Fetch new data from the sender
-    pub fn update(&mut self) {
-        self.inner.update();
-    }
-
     #[inline]
     fn get(&self, sample: isize) -> f32 {
         if sample < 0 {
@@ -98,6 +93,12 @@ impl Source for Receiver {
     fn remaining(&self) -> f32 {
         f32::INFINITY
     }
+
+    /// Fetch new data from the sender
+    #[inline]
+    fn prepare(&mut self) {
+        self.inner.update();
+    }
 }
 
 #[cfg(test)]
@@ -121,7 +122,7 @@ mod tests {
         let (mut send, mut recv) = stream(1, 4, 4);
         assert_eq!(send.write(&[1.0, 2.0, 3.0]), 3);
         assert_eq!(send.write(&[4.0, 5.0]), 2);
-        recv.update();
+        recv.prepare();
         assert_seq(&recv, -1.0, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
 
         recv.advance(1.0);
@@ -133,7 +134,7 @@ mod tests {
 
         // Only 4 slots available to the writer
         assert_eq!(send.write(&[6.0, 7.0, 8.0, 9.0, 10.0]), 4);
-        recv.update();
+        recv.prepare();
         assert_seq(&recv, -1.0, &[5.0, 6.0, 7.0, 8.0, 9.0, 0.0]);
     }
 }
