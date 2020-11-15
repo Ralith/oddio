@@ -105,7 +105,8 @@ impl Remote {
                 self.first_free = self.sources.capacity();
                 self.sources = sources.clone();
                 self.send(Msg::ReallocSources(sources));
-                self.alloc(data).unwrap_or_else(|_| unreachable!())
+                self.alloc(data)
+                    .unwrap_or_else(|_| unreachable!("newly allocated nonzero-capacity buffer"))
             }
         };
         self.send(Msg::Play(id.index));
@@ -136,8 +137,9 @@ impl Remote {
             let (mut send, recv) = spsc::channel(2 * self.sender.capacity() + 1);
             self.sender
                 .send(Msg::ReallocChannel(recv), 0)
-                .unwrap_or_else(|_| unreachable!());
-            send.send(msg, 0).unwrap_or_else(|_| unreachable!());
+                .unwrap_or_else(|_| unreachable!("a space was reserved for this message"));
+            send.send(msg, 0)
+                .unwrap_or_else(|_| unreachable!("newly allocated nonzero-capacity queue"));
             self.sender = send;
         }
     }
