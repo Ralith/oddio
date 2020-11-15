@@ -115,10 +115,12 @@ pub struct SamplesSource {
 
 impl SamplesSource {
     /// Create an audio source from some samples
-    pub fn new(data: Arc<Samples>, start_sample: f64) -> Self {
+    ///
+    /// `start_seconds` adjusts the initial playback position, and may be negative.
+    pub fn new(data: Arc<Samples>, start_seconds: f64) -> Self {
         Self {
+            t: start_seconds * data.rate as f64,
             data,
-            t: start_sample,
         }
     }
 }
