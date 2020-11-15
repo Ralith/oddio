@@ -39,8 +39,7 @@ impl Builder {
     /// Construct a remote control and the worker it controls from this configuration
     #[must_use]
     pub fn build(&self) -> (Remote, Worker) {
-        let (send, recv) = spsc::channel(127);
-        const INITIAL_SOURCES_CAPACITY: usize = 128;
+        let (send, recv) = spsc::channel(INITIAL_CHANNEL_CAPACITY);
         let sources = SourceTable::with_capacity(INITIAL_SOURCES_CAPACITY);
         let remote = Remote {
             sender: send,
@@ -57,6 +56,9 @@ impl Builder {
         (remote, worker)
     }
 }
+
+const INITIAL_CHANNEL_CAPACITY: usize = 127; // because the ring buffer wastes a slot
+const INITIAL_SOURCES_CAPACITY: usize = 128;
 
 impl Default for Builder {
     fn default() -> Self {
@@ -431,9 +433,10 @@ mod tests {
     use super::*;
     use crate::{Samples, SamplesSource};
 
+    const RATE: u32 = 10;
+
     #[test]
     fn drop_finished() {
-        const RATE: u32 = 10;
         let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         assert_eq!(worker.source_count(), 0);
@@ -444,5 +447,32 @@ mod tests {
         assert_eq!(worker.source_count(), 1);
         worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 20-29
         assert_eq!(worker.source_count(), 0);
+    }
+
+    #[test]
+    fn realloc_sources() {
+        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
+        let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
+        assert_eq!(worker.source_count(), 0);
+        for i in 1..=(INITIAL_SOURCES_CAPACITY + 2) {
+            remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+            worker.render(RATE, &mut []); // Process messages
+            assert_eq!(worker.source_count(), i);
+        }
+    }
+
+    #[test]
+    fn realloc_channel() {
+        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
+        let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
+        for _ in 0..(INITIAL_CHANNEL_CAPACITY + 2) {
+            remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+        }
+        assert_eq!(remote.sender.capacity(), 1 + 2 * INITIAL_CHANNEL_CAPACITY);
+        assert_eq!(worker.source_count(), 0);
+        worker.render(RATE, &mut []); // Process first channel's worth of messages
+        assert_eq!(worker.source_count(), INITIAL_CHANNEL_CAPACITY - 1); // One space taken by realloc message
+        worker.render(RATE, &mut []); // Process remaining messages
+        assert_eq!(worker.source_count(), INITIAL_CHANNEL_CAPACITY + 2);
     }
 }
