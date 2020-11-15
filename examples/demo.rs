@@ -1,7 +1,9 @@
-use std::{thread, time::Duration};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use oddio::Source;
 
 const DURATION_SECS: u32 = 6;
 const BUFFER_SIZE_MS: u32 = 100;
@@ -25,11 +27,10 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let mut source = oddio::SamplesSource::new(boop, 0.0);
+    let source = oddio::SamplesSource::new(boop, 0.0);
 
-    let speed = 50.0;
-    let mut boop_state = oddio::State::new([-speed, 10.0, 0.0].into());
-    let mut sample = 0;
+    let (mut remote, mut worker) = oddio::worker(4.0);
+
     let stream = device
         .build_output_stream(
             &config,
@@ -38,16 +39,7 @@ fn main() {
                 for s in &mut samples[..] {
                     *s = [0.0, 0.0];
                 }
-                let n = samples.len();
-                let mut mixer = oddio::Mixer::new(sample_rate.0, samples);
-                sample += n;
-                let t = sample as f32 / sample_rate.0 as f32;
-                mixer.mix(oddio::Input {
-                    source: &source,
-                    state: &mut boop_state,
-                    position_wrt_listener: [-speed + speed * t, 10.0, 0.0].into(),
-                });
-                source.advance(n as f32);
+                worker.render(sample_rate.0, samples);
             },
             move |err| {
                 eprintln!("{}", err);
@@ -55,5 +47,25 @@ fn main() {
         )
         .unwrap();
     stream.play().unwrap();
-    thread::sleep(Duration::from_secs(DURATION_SECS as u64));
+
+    let speed = 50.0;
+    let source = remote.play(source, [-speed, 10.0, 0.0].into(), [speed, 0.0, 0.0].into());
+
+    let start = Instant::now();
+
+    loop {
+        thread::sleep(Duration::from_millis(50));
+        let dt = start.elapsed();
+        if dt >= Duration::from_secs(DURATION_SECS as u64) {
+            break;
+        }
+        // This is in principle a no-op because the velocity isn't changing, but due to imprecise
+        // sleep times and the fact that the audio thread runs at unaligned intervals means that the
+        // this would produce glitches if not for smoothing done by the worker.
+        remote.set_motion(
+            source,
+            [-speed + speed * dt.as_secs_f32(), 10.0, 0.0].into(),
+            [speed, 0.0, 0.0].into(),
+        );
+    }
 }
