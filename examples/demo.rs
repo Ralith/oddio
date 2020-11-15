@@ -35,7 +35,7 @@ fn main() {
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                let samples = oddio::aggregate_stereo(data);
+                let samples = oddio::group_stereo(data);
                 for s in &mut samples[..] {
                     *s = [0.0, 0.0];
                 }
