@@ -29,7 +29,7 @@ fn main() {
     );
     let source = oddio::SamplesSource::new(boop, 0.0);
 
-    let (mut remote, mut worker) = oddio::worker(4.0);
+    let (mut remote, mut worker) = oddio::worker().build();
 
     let stream = device
         .build_output_stream(

@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+    time::Duration,
 };
 
 use crate::{
@@ -12,26 +13,47 @@ use crate::{
     mixer, spsc, Sample, Source,
 };
 
-/// Create an audio worker and its remote control
-///
-/// Sources are dropped when they have finished playing for longer than `max_delay`.
-pub fn worker(max_delay: f32) -> (Remote, Worker) {
-    let (send, recv) = spsc::channel(127);
-    const INITIAL_SOURCES_CAPACITY: usize = 128;
-    let sources = SourceTable::with_capacity(INITIAL_SOURCES_CAPACITY);
-    let remote = Remote {
-        sender: send,
-        sources: sources.clone(),
-        first_free: 0,
-    };
-    let worker = Worker {
-        max_delay,
-        recv,
-        sources,
-        first_populated: usize::MAX,
-        last_free: INITIAL_SOURCES_CAPACITY - 1,
-    };
-    (remote, worker)
+/// Begin building an audio worker
+pub fn worker() -> Builder {
+    Builder { max_delay: 4.0 }
+}
+
+#[must_use]
+#[derive(Debug, Clone)]
+pub struct Builder {
+    max_delay: f32,
+}
+
+impl Builder {
+    /// Sources are dropped when they ended more than `delay` ago
+    ///
+    /// If this is set too low, distance listeners may hear sources appear to cut off early due to
+    /// sound travel time. Good settings are proportional to the square root of the maximum source
+    /// amplitude.
+    pub fn max_delay(&mut self, delay: Duration) -> &mut Self {
+        self.max_delay = delay.as_secs_f32();
+        self
+    }
+
+    #[must_use]
+    pub fn build(&self) -> (Remote, Worker) {
+        let (send, recv) = spsc::channel(127);
+        const INITIAL_SOURCES_CAPACITY: usize = 128;
+        let sources = SourceTable::with_capacity(INITIAL_SOURCES_CAPACITY);
+        let remote = Remote {
+            sender: send,
+            sources: sources.clone(),
+            first_free: 0,
+        };
+        let worker = Worker {
+            max_delay: self.max_delay,
+            recv,
+            sources,
+            first_populated: usize::MAX,
+            last_free: INITIAL_SOURCES_CAPACITY - 1,
+        };
+        (remote, worker)
+    }
 }
 
 pub struct Remote {
@@ -389,7 +411,7 @@ mod tests {
     #[test]
     fn drop_finished() {
         const RATE: u32 = 10;
-        let (mut remote, mut worker) = worker(1.0);
+        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
         let source = SamplesSource::new(Samples::from_slice(RATE, &[0.0; RATE as usize]), 0.0);
         assert_eq!(worker.source_count(), 0);
         remote.play(source, [0.0; 3].into(), [0.0; 3].into());
