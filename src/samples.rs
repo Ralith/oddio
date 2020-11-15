@@ -105,6 +105,7 @@ impl DerefMut for Samples {
 }
 
 /// An audio source backed by a static sequence of samples
+#[derive(Debug, Clone)]
 pub struct SamplesSource {
     /// Samples to play
     data: Arc<Samples>,
@@ -138,5 +139,11 @@ impl Source for SamplesSource {
 
     fn remaining(&self) -> f32 {
         (self.data.len() as f64 - self.t) as f32
+    }
+}
+
+impl From<Arc<Samples>> for SamplesSource {
+    fn from(samples: Arc<Samples>) -> Self {
+        Self::new(samples, 0.0)
     }
 }

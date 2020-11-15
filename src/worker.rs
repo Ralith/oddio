@@ -15,7 +15,7 @@ use crate::{
 
 /// Begin building an audio worker
 pub fn worker() -> Builder {
-    Builder { max_delay: 4.0 }
+    Builder::default()
 }
 
 /// Configuration that audio workers are built from
@@ -55,6 +55,12 @@ impl Builder {
             last_free: INITIAL_SOURCES_CAPACITY - 1,
         };
         (remote, worker)
+    }
+}
+
+impl Default for Builder {
+    fn default() -> Self {
+        Builder { max_delay: 4.0 }
     }
 }
 
@@ -429,7 +435,7 @@ mod tests {
     fn drop_finished() {
         const RATE: u32 = 10;
         let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
-        let source = SamplesSource::new(Samples::from_slice(RATE, &[0.0; RATE as usize]), 0.0);
+        let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         assert_eq!(worker.source_count(), 0);
         remote.play(source, [0.0; 3].into(), [0.0; 3].into());
         worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 0-9

@@ -14,7 +14,7 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let boop = oddio::SamplesSource::new(boop, 0.0);
+    let boop = oddio::SamplesSource::from(boop);
 
     let (mut remote, mut worker) = oddio::worker().build();
     remote.play(boop, [-SPEED, 10.0, 0.0].into(), [SPEED, 0.0, 0.0].into());

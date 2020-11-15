@@ -27,7 +27,7 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let source = oddio::SamplesSource::new(boop, 0.0);
+    let source = oddio::SamplesSource::from(boop);
 
     let (mut remote, mut worker) = oddio::worker().build();
 
