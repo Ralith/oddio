@@ -234,8 +234,11 @@ impl Worker {
                                 sources.slots.as_ptr().cast::<Slot>() as *mut _,
                                 self.sources.slots.len(),
                             );
+                        let old = mem::replace(&mut self.sources, sources);
+                        for slot in &old.slots {
+                            mem::forget((*slot.source.get()).take());
+                        }
                     }
-                    mem::forget(mem::replace(&mut self.sources, sources));
                     // Reconnect existing freed slots in the prefix to the tail of newly freed
                     // ones. We walk the old freelist backwards, appending to the new freelist as we
                     // go.
