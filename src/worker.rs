@@ -248,6 +248,8 @@ impl Worker {
                     // The last newly allocated slot is probably free. If not, this'll get fixed up
                     // when handling the corresponding Play message.
                     self.last_free = self.sources.slots.len() - 1;
+                    // We know all Play messages affecting the pre-existing slots have already been
+                    // processed, so we can rely the freelist being gracefully terminated.
                     while i != usize::MAX {
                         let prev_free = self.last_free;
                         self.last_free = i;
@@ -272,14 +274,24 @@ impl Worker {
                 Play(index) => {
                     let index = index as usize;
                     let slot = &self.sources.slots[index];
+
+                    // Remove from freelist
+                    let next_free = slot.next.load(Ordering::Relaxed);
+                    if next_free != usize::MAX {
+                        unsafe {
+                            (*self.sources.slots[next_free].prev.get()) = usize::MAX;
+                        }
+                    }
+                    if index == self.last_free {
+                        self.last_free = usize::MAX;
+                    }
+
+                    // Add to populated list
                     slot.next.store(self.first_populated, Ordering::Relaxed);
                     unsafe {
                         (*slot.prev.get()) = usize::MAX;
                     }
                     self.first_populated = index;
-                    if index == self.last_free {
-                        self.last_free = usize::MAX;
-                    }
                 }
                 Stop(id) => unsafe {
                     if self.sources.try_get(id).is_some() {
