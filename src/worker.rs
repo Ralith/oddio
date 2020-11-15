@@ -254,13 +254,6 @@ impl Worker {
                         let prev_free = self.last_free;
                         self.last_free = i;
                         let slot = &self.sources.slots[i as usize];
-                        // If we hit an allocated slot, we've reached the end of the freelist. It's
-                        // sound to access the source of freed slots in the old range because the
-                        // remote is guaranteed not to be writing into them until we wire them back
-                        // up.
-                        if unsafe { (*slot.source.get()).is_some() } {
-                            break;
-                        }
                         self.sources.slots[prev_free]
                             .next
                             .store(i, Ordering::Relaxed);
@@ -362,7 +355,6 @@ impl SourceTable {
         }
 
         // Clean up
-        (*slot.source.get()) = None;
         (*slot.generation.get()) = (*slot.generation.get()).wrapping_add(1);
 
         // Append to freelist
