@@ -1,5 +1,4 @@
 use std::{fs::File, path::Path};
-use oddio::Source;
 
 const DURATION_SECS: u32 = 6;
 const RATE: u32 = 44100;
@@ -15,22 +14,14 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let mut boop = oddio::SamplesSource::new(boop, 0.0);
-    let mut boop_state = oddio::State::new([-SPEED, 10.0, 0.0].into());
+    let boop = oddio::SamplesSource::new(boop, 0.0);
+
+    let (mut remote, mut worker) = oddio::worker().build();
+    remote.play(boop, [-SPEED, 10.0, 0.0].into(), [SPEED, 0.0, 0.0].into());
 
     let mut samples = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
-    for i in 0..(samples.len() / FRAME_SIZE) {
-        let t = ((i + 1) * FRAME_SIZE) as f64 / RATE as f64;
-        let mut mixer = oddio::Mixer {
-            samples: &mut samples[i as usize * FRAME_SIZE..(i as usize + 1) * FRAME_SIZE],
-            rate: RATE,
-        };
-        mixer.mix(oddio::Input {
-            source: &boop,
-            state: &mut boop_state,
-            position_wrt_listener: [-SPEED + SPEED * t as f32, 10.0, 0.0].into(),
-        });
-        boop.advance(FRAME_SIZE as f32);
+    for chunk in samples.chunks_mut(FRAME_SIZE) {
+        worker.render(RATE, chunk);
     }
 
     let track = wav::BitDepth::Sixteen(

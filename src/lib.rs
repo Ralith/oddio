@@ -6,7 +6,6 @@ mod spsc;
 pub mod stream;
 mod worker;
 
-pub use mixer::*;
 pub use samples::*;
 pub use source::*;
 pub use stream::stream;
