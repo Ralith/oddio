@@ -139,15 +139,17 @@ impl Remote {
             return Err(source);
         }
         let index = self.first_free;
-        let slot = unsafe { &mut *self.sources.slots[index].get() };
+        let slot = &self.sources.slots[index];
         // Acquire ordering ensures we don't read the next free slot's generation until it's
         // updated.
         self.first_free = slot.next.load(Ordering::Acquire);
-        slot.source = Some(source);
-        Ok(SourceId {
-            index: index as u32,
-            generation: slot.generation,
-        })
+        unsafe {
+            (*slot.source.get()) = Some(source);
+            Ok(SourceId {
+                index: index as u32,
+                generation: slot.generation.get().read(),
+            })
+        }
     }
 }
 
@@ -183,8 +185,8 @@ impl Worker {
         let mut mixer = mixer::Mixer::new(rate, samples);
         let mut i = self.first_populated;
         while i != usize::MAX {
-            let slot = unsafe { &mut *self.sources.slots[i].get() };
-            let source = slot.source.as_mut().unwrap();
+            let slot = &self.sources.slots[i];
+            let source = unsafe { (*slot.source.get()).as_mut().unwrap() };
 
             source.dt += dt;
             let position = source.smoothed_position();
@@ -205,9 +207,8 @@ impl Worker {
         let mut n = 0;
         let mut i = self.first_populated;
         while i != usize::MAX {
-            let slot = unsafe { &mut *self.sources.slots[i].get() };
             n += 1;
-            i = slot.next.load(Ordering::Relaxed);
+            i = self.sources.slots[i].next.load(Ordering::Relaxed);
         }
         n
     }
@@ -244,30 +245,41 @@ impl Worker {
                     // large proportion of existing slots being freed after the initial realloc
                     // began but before the worker learns about it is low.
                     let mut i = self.last_free;
+                    // The last newly allocated slot is probably free. If not, this'll get fixed up
+                    // when handling the corresponding Play message.
                     self.last_free = self.sources.slots.len() - 1;
                     while i != usize::MAX {
-                        let slot = unsafe { &mut *self.sources.slots[i as usize].get() };
+                        let prev_free = self.last_free;
+                        self.last_free = i;
+                        let slot = &self.sources.slots[i as usize];
                         // If we hit an allocated slot, we've reached the end of the freelist. It's
                         // sound to access the source of freed slots in the old range because the
                         // remote is guaranteed not to be writing into them until we wire them back
                         // up.
-                        if slot.source.is_some() {
+                        if unsafe { (*slot.source.get()).is_some() } {
                             break;
                         }
+                        self.sources.slots[prev_free]
+                            .next
+                            .store(i, Ordering::Relaxed);
                         unsafe {
-                            (*self.sources.slots[self.last_free].get())
-                                .next
-                                .store(i, Ordering::Relaxed);
+                            i = *slot.prev.get();
+                            slot.next.store(i, Ordering::Relaxed);
+                            (*slot.prev.get()) = prev_free;
                         }
-                        i = slot.prev;
-                        slot.next.store(slot.prev, Ordering::Relaxed);
-                        slot.prev = self.last_free;
                     }
                 }
                 Play(index) => {
-                    let slot = unsafe { &mut *self.sources.slots[index as usize].get() };
+                    let index = index as usize;
+                    let slot = &self.sources.slots[index];
                     slot.next.store(self.first_populated, Ordering::Relaxed);
-                    self.first_populated = index as usize;
+                    unsafe {
+                        (*slot.prev.get()) = usize::MAX;
+                    }
+                    self.first_populated = index;
+                    if index == self.last_free {
+                        self.last_free = usize::MAX;
+                    }
                 }
                 Stop(id) => unsafe {
                     if self.sources.try_get(id).is_some() {
@@ -280,7 +292,7 @@ impl Worker {
                 },
                 SetMotion(id, pos, vel) => {
                     if let Some(slot) = unsafe { self.sources.try_get(id) } {
-                        let source = slot.source.as_mut().unwrap();
+                        let source = unsafe { (*slot.source.get()).as_mut().unwrap() };
                         source.prev_position = source.smoothed_position();
                         source.ref_position = pos;
                         source.velocity = vel;
@@ -298,19 +310,17 @@ impl Worker {
 unsafe impl Send for Worker {}
 
 struct SourceTable {
-    slots: [UnsafeCell<Slot>],
+    slots: [Slot],
 }
 
 impl SourceTable {
     fn with_capacity(n: usize) -> Arc<Self> {
         let slots = (0..n)
-            .map(|i| {
-                UnsafeCell::new(Slot {
-                    source: None,
-                    prev: i.checked_sub(1).unwrap_or(usize::MAX),
-                    next: AtomicUsize::new(if i + 1 == n { usize::MAX } else { i + 1 }),
-                    generation: 0,
-                })
+            .map(|i| Slot {
+                source: UnsafeCell::new(None),
+                prev: UnsafeCell::new(i.checked_sub(1).unwrap_or(usize::MAX)),
+                next: AtomicUsize::new(if i + 1 == n { usize::MAX } else { i + 1 }),
+                generation: UnsafeCell::new(0),
             })
             .collect::<Arc<[_]>>();
         unsafe { mem::transmute(slots) }
@@ -322,38 +332,38 @@ impl SourceTable {
 
     /// Worker only
     unsafe fn drop_source(&self, index: usize, last_free: &mut usize, first_populated: &mut usize) {
-        let slot = &mut *self.slots[index].get();
+        let slot = &self.slots[index];
 
-        // Update external references
-        if slot.prev != usize::MAX {
-            let prev = &mut *self.slots[slot.prev].get();
-            // Release ordering ensures the write to slot.generation above is visible.
-            prev.next
-                .store(slot.next.load(Ordering::Relaxed), Ordering::Release);
-        }
+        // Remove from populated list
+        let prev_val = *slot.prev.get();
         let next_val = slot.next.load(Ordering::Relaxed);
-        if next_val != usize::MAX {
-            let next = &mut *self.slots[next_val].get();
-            next.prev = slot.prev;
-        }
-        if index == *first_populated {
+        if prev_val != usize::MAX {
+            self.slots[prev_val]
+                .next
+                .store(slot.next.load(Ordering::Relaxed), Ordering::Relaxed);
+        } else {
+            debug_assert_eq!(index, *first_populated);
             *first_populated = next_val;
         }
+        if next_val != usize::MAX {
+            (*self.slots[next_val].prev.get()) = *slot.prev.get();
+        }
 
-        // Update own fields
-        slot.source = None;
-        slot.generation = slot.generation.wrapping_add(1);
+        // Clean up
+        (*slot.source.get()) = None;
+        (*slot.generation.get()) = (*slot.generation.get()).wrapping_add(1);
+
+        // Append to freelist
         slot.next.store(usize::MAX, Ordering::Relaxed);
-        slot.prev = *last_free;
-        (*self.slots[*last_free].get())
-            .next
-            .store(index, Ordering::Relaxed);
+        (*slot.prev.get()) = *last_free;
+        // Release ordering ensures the prior write to slot.generation above is visible.
+        self.slots[*last_free].next.store(index, Ordering::Release);
         *last_free = index;
     }
 
-    unsafe fn try_get(&self, id: SourceId) -> Option<&mut Slot> {
-        let slot = &mut *self.slots[id.index as usize].get();
-        if slot.generation != id.generation {
+    unsafe fn try_get(&self, id: SourceId) -> Option<&Slot> {
+        let slot = &self.slots[id.index as usize];
+        if *slot.generation.get() != id.generation {
             return None;
         }
         Some(slot)
@@ -361,10 +371,10 @@ impl SourceTable {
 }
 
 struct Slot {
-    source: Option<SourceData>,
-    prev: usize,
+    source: UnsafeCell<Option<SourceData>>,
+    prev: UnsafeCell<usize>,
     next: AtomicUsize,
-    generation: u32,
+    generation: UnsafeCell<u32>,
 }
 
 struct SourceData {
@@ -474,5 +484,26 @@ mod tests {
         assert_eq!(worker.source_count(), INITIAL_CHANNEL_CAPACITY - 1); // One space taken by realloc message
         worker.render(RATE, &mut []); // Process remaining messages
         assert_eq!(worker.source_count(), INITIAL_CHANNEL_CAPACITY + 2);
+    }
+
+    #[test]
+    fn reuse_slot() {
+        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
+        let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
+        let first = remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+        assert_eq!(first.index, 0);
+        assert_eq!(first.generation, 0);
+        remote.stop(first);
+        for _ in 1..INITIAL_SOURCES_CAPACITY {
+            let id = remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+            assert_eq!(id.generation, 0);
+            remote.stop(id);
+            worker.render(RATE, &mut []); // Process messages
+        }
+        assert_eq!(worker.source_count(), 0);
+        let reused = remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+        assert_eq!(remote.sources.slots.len(), INITIAL_SOURCES_CAPACITY);
+        assert_eq!(first.index, reused.index);
+        assert_ne!(first.generation, reused.generation);
     }
 }
