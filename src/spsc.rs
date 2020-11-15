@@ -145,6 +145,7 @@ impl<T: fmt::Debug> fmt::Debug for Receiver<T> {
     }
 }
 
+#[repr(C)]
 struct Shared<T> {
     header: Header,
     data: [UnsafeCell<MaybeUninit<T>>],
@@ -155,7 +156,7 @@ unsafe impl<T: Send> Sync for Shared<T> {}
 impl<T> Shared<T> {
     fn new(capacity: usize) -> Arc<Self> {
         let header_layout = alloc::Layout::new::<Header>();
-        let (layout, _) = header_layout
+        let layout = header_layout
             .extend(
                 alloc::Layout::from_size_align(
                     mem::size_of::<T>() * capacity,
@@ -163,7 +164,9 @@ impl<T> Shared<T> {
                 )
                 .unwrap(),
             )
-            .unwrap();
+            .unwrap()
+            .0
+            .pad_to_align();
         unsafe {
             let mem = alloc::alloc(layout);
             mem.cast::<Header>().write(Header {
