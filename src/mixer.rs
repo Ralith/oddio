@@ -1,6 +1,9 @@
 use std::ops::{Index, IndexMut};
 
-use crate::{Sample, Source};
+use crate::{
+    math::{dot, norm, scale, sub},
+    Sample, Source,
+};
 
 /// State of the playback of a single sound for a single listener
 #[derive(Debug, Clone)]
@@ -94,26 +97,6 @@ pub struct Input<'a, T: ?Sized> {
     pub state: &'a mut State,
     /// The position at the end of the output
     pub position_wrt_listener: mint::Point3<f32>,
-}
-
-fn norm(x: mint::Vector3<f32>) -> f32 {
-    x.as_ref().iter().map(|&x| x.powi(2)).sum::<f32>().sqrt()
-}
-
-fn dot(x: mint::Vector3<f32>, y: mint::Vector3<f32>) -> f32 {
-    x.as_ref()
-        .iter()
-        .zip(y.as_ref().iter())
-        .map(|(&x, &y)| x * y)
-        .sum::<f32>()
-}
-
-fn scale(v: mint::Vector3<f32>, f: f32) -> mint::Vector3<f32> {
-    [v.x * f, v.y * f, v.z * f].into()
-}
-
-fn sub(a: mint::Point3<f32>, b: mint::Point3<f32>) -> mint::Vector3<f32> {
-    [a.x - b.x, a.y - b.y, a.z - b.z].into()
 }
 
 #[derive(Debug, Copy, Clone)]
