@@ -221,6 +221,19 @@ impl Worker {
         n
     }
 
+    #[cfg(test)]
+    fn free_count(&self) -> usize {
+        let mut n = 0;
+        let mut i = self.last_free;
+        while i != usize::MAX {
+            n += 1;
+            unsafe {
+                i = *self.sources.slots[i].prev.get();
+            }
+        }
+        n
+    }
+
     fn drain_msgs(&mut self) {
         self.recv.update();
         let iter = self.recv.drain();
@@ -465,13 +478,17 @@ mod tests {
         let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         assert_eq!(worker.source_count(), 0);
+        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY);
         remote.play(source, [0.0; 3].into(), [0.0; 3].into());
         worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 0-9
         assert_eq!(worker.source_count(), 1);
+        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY - 1);
         worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 10-19
         assert_eq!(worker.source_count(), 1);
+        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY - 1);
         worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 20-29
         assert_eq!(worker.source_count(), 0);
+        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY);
     }
 
     #[test]
@@ -484,6 +501,7 @@ mod tests {
             worker.render(RATE, &mut []); // Process messages
             assert_eq!(worker.source_count(), i);
         }
+        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY - 2);
     }
 
     #[test]
@@ -516,9 +534,13 @@ mod tests {
             worker.render(RATE, &mut []); // Process messages
         }
         assert_eq!(worker.source_count(), 0);
+        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY);
         let reused = remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
         assert_eq!(remote.sources.slots.len(), INITIAL_SOURCES_CAPACITY);
         assert_eq!(first.index, reused.index);
         assert_ne!(first.generation, reused.generation);
+        worker.render(RATE, &mut []); // Process messages
+        assert_eq!(worker.source_count(), 1);
+        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY - 1);
     }
 }
