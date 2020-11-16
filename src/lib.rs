@@ -19,6 +19,6 @@ pub use worker::*;
 pub type Sample = f32;
 
 /// Convert a slice of interleaved stereo data into a slice of stereo frames
-pub fn group_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {
+pub fn frame_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {
     unsafe { std::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() / 2) }
 }
