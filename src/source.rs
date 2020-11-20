@@ -17,10 +17,12 @@ pub trait Source {
 
     /// Time, in samples, from the current instant to the end
     ///
-    /// May be negative or infinite.
+    /// May be negative or infinite. Used to determine when a source is no longer needed.
     fn remaining(&self) -> f32;
 
     /// Called before a batch of samples is taken
+    ///
+    /// This is a good place to e.g. fetch updated state from a control channel.
     #[inline]
     fn prepare(&mut self) {}
 }

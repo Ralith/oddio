@@ -187,6 +187,8 @@ pub struct Worker {
 impl Worker {
     /// Write frames of stereo audio to `samples` for playback at `rate`
     ///
+    /// Guaranteed to be wait-free, suitable for invocation on a real-time audio thread.
+    ///
     /// Adds to the existing contents of `samples`. Be sure you zero it out first!
     pub fn render(&mut self, rate: u32, samples: &mut [[Sample; 2]]) {
         self.drain_msgs();
@@ -340,6 +342,15 @@ impl Worker {
 
 unsafe impl Send for Worker {}
 
+/// Storage arena for sound sources
+///
+/// Contains two intrusive lists: the free list, and the populated list. The freelist begins at
+/// `Remote::first_free` and ends at `Worker::last_free`, while the populated list begins at
+/// `Worker::first_populated`.
+///
+/// The `Remote` inserts data into slots in the freelist in order starting from `first_free`, and
+/// sends `Msg::Play` messages to the `Worker` instructing it to move them into the populated
+/// list. The `Worker` moves items from the populated list into the freelist at will.
 struct SourceTable {
     slots: [Slot],
 }
@@ -382,6 +393,9 @@ impl SourceTable {
 
         // Clean up
         (*slot.generation.get()) = (*slot.generation.get()).wrapping_add(1);
+        // Note that we leave `slot.source` populated here, because freeing it might hit a lock in
+        // the global allocator, which could undermine our real-time guarantee. Instead, we let the
+        // `Remote` drop the old value the next time the slot is reused.
 
         // Append to freelist
         slot.next.store(usize::MAX, Ordering::Relaxed);
@@ -401,9 +415,15 @@ impl SourceTable {
 }
 
 struct Slot {
+    /// When on the freelist, may be written by `Remote`. When populated, may be read by
+    /// `Worker`. Other access is unsound!
     source: UnsafeCell<Option<SourceData>>,
+    /// Accessed by `worker` only.
     prev: UnsafeCell<usize>,
+    /// When on the freelist, may be read by `Remote`. Written by `Worker` when moving between
+    /// lists.
     next: AtomicUsize,
+    /// Accessed by `Worker` only.
     generation: UnsafeCell<u32>,
 }
 
@@ -465,8 +485,8 @@ fn process_source<S: Source>(
 ///
 /// Discontinuities arise because we only process commands at discrete intervals, and because the
 /// caller probably isn't running at perfectly even intervals either. If smoothed over too short a
-/// period, these will cause abrupt changes in velocity, which are distinctively audible due to the
-/// doppler effect.
+/// period, discontinuities will cause abrupt changes in effective velocity, which are distinctively
+/// audible due to the doppler effect.
 const POSITION_SMOOTHING_PERIOD: f32 = 0.5;
 
 #[cfg(test)]
