@@ -1,11 +1,13 @@
 use std::{
-    alloc, mem,
+    alloc,
+    cell::Cell,
+    mem,
     ops::{Deref, DerefMut},
     ptr,
     sync::Arc,
 };
 
-use crate::{Sample, Source};
+use crate::{Action, Sample, Seek, Source};
 
 /// A sequence of audio samples at a particular rate
 #[derive(Debug)]
@@ -111,8 +113,8 @@ impl DerefMut for Samples {
 pub struct SamplesSource {
     /// Samples to play
     data: Arc<Samples>,
-    /// Position to begin playback at, in samples
-    t: f64,
+    /// Position of t=0 in seconds
+    t: Cell<f64>,
 }
 
 impl SamplesSource {
@@ -121,32 +123,46 @@ impl SamplesSource {
     /// `start_seconds` adjusts the initial playback position, and may be negative.
     pub fn new(data: Arc<Samples>, start_seconds: f64) -> Self {
         Self {
-            t: start_seconds * data.rate as f64,
+            t: Cell::new(start_seconds),
             data,
         }
     }
 }
 
 impl Source for SamplesSource {
+    type Frame = Sample;
+
     #[inline]
-    fn rate(&self) -> u32 {
-        self.data.rate
+    fn update(&self) -> Action {
+        Action::Retain
     }
 
     #[inline]
-    fn sample(&self, t: f32) -> f32 {
-        let s = self.t + f64::from(t);
-        self.data.sample(s)
+    fn sample(&self, sample_duration: f32, count: usize, out: impl FnMut(usize, Self::Frame)) {
+        self.sample_at(sample_duration, count, 0.0, out);
+        self.advance(sample_duration * count as f32);
+    }
+}
+
+impl Seek for SamplesSource {
+    #[inline]
+    fn sample_at(
+        &self,
+        sample_duration: f32,
+        count: usize,
+        delay: f32,
+        mut out: impl FnMut(usize, Self::Frame),
+    ) {
+        let s0 = (self.t.get() - f64::from(delay)) * self.data.rate as f64;
+        let ds = f64::from(sample_duration) * self.data.rate as f64;
+        for i in 0..count {
+            out(i, self.data.sample(s0 + (i as f64) * ds));
+        }
     }
 
     #[inline]
-    fn advance(&mut self, dt: f32) {
-        self.t += f64::from(dt);
-    }
-
-    #[inline]
-    fn remaining(&self) -> f32 {
-        (self.data.len() as f64 - self.t) as f32
+    fn advance(&self, dt: f32) {
+        self.t.set(self.t.get() + f64::from(dt));
     }
 }
 

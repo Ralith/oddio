@@ -1,6 +1,6 @@
 use std::{fs::File, path::Path};
 
-const DURATION_SECS: u32 = 6;
+const DURATION_SECS: u32 = 3;
 const RATE: u32 = 44100;
 const FRAME_SIZE: usize = 512;
 const SPEED: f32 = 50.0;
@@ -14,10 +14,14 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let boop = oddio::SamplesSource::from(boop);
+    let boop = oddio::Spatial::new(
+        oddio::SamplesSource::from(boop),
+        [-SPEED, 10.0, 0.0].into(),
+        [SPEED, 0.0, 0.0].into(),
+    );
 
-    let (mut remote, mut worker) = oddio::worker().build();
-    remote.play(boop, [-SPEED, 10.0, 0.0].into(), [SPEED, 0.0, 0.0].into());
+    let (mut remote, mut worker) = oddio::worker();
+    remote.play(boop);
 
     let mut samples = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
     for chunk in samples.chunks_mut(FRAME_SIZE) {

@@ -1,6 +1,8 @@
 //! Streaming audio support
 
-use crate::{spsc, Sample, Source};
+use std::cell::{Cell, UnsafeCell};
+
+use crate::{spsc, Action, Sample, Seek, Source};
 
 /// Construct an unbounded stream of dynamic audio
 ///
@@ -21,8 +23,8 @@ pub fn stream(rate: u32, past_size: usize, future_size: usize) -> (Sender, Recei
         Receiver {
             rate,
             past_size,
-            inner: recv,
-            t: 0.0,
+            inner: UnsafeCell::new(recv),
+            t: Cell::new(0.0),
         },
     )
 }
@@ -43,9 +45,9 @@ impl Sender {
 pub struct Receiver {
     rate: u32,
     past_size: usize,
-    inner: spsc::Receiver<Sample>,
+    inner: UnsafeCell<spsc::Receiver<Sample>>,
     /// Offset of current data from the start of the buffer, in samples
-    t: f32,
+    t: Cell<f32>,
 }
 
 impl Receiver {
@@ -55,49 +57,64 @@ impl Receiver {
             return 0.0;
         }
         let sample = sample as usize;
-        if sample >= self.inner.len() {
+        let inner = unsafe { &mut *self.inner.get() };
+        if sample >= inner.len() {
             return 0.0;
         }
-        self.inner[sample]
+        inner[sample]
     }
 }
 
 impl Source for Receiver {
+    type Frame = Sample;
+
     #[inline]
-    fn rate(&self) -> u32 {
-        self.rate
+    fn update(&self) -> Action {
+        unsafe {
+            (*self.inner.get()).update();
+        }
+        Action::Retain
     }
 
     #[inline]
-    fn sample(&self, t: f32) -> f32 {
-        let t = self.t + t;
-        let x0 = t.trunc() as isize;
-        let fract = t.fract() as f32;
-        let x1 = x0 + 1;
-        self.get(x0) * (1.0 - fract) + self.get(x1) * fract
+    fn sample(&self, sample_duration: f32, count: usize, out: impl FnMut(usize, Self::Frame)) {
+        self.sample_at(sample_duration, count, 0.0, out);
+        self.advance(sample_duration * count as f32);
     }
+}
 
+impl Seek for Receiver {
     #[inline]
-    fn advance(&mut self, samples: f32) {
-        // TODO: Clamp such that a configurable amount of data remains at t >= 0, to allow repeating
-        // audio rather than gaps
-        self.t = (self.t + samples).min((self.inner.len() + self.past_size) as f32);
-        let excess = (self.t - self.past_size as f32).trunc();
-        if excess > 0.0 {
-            self.inner.release(excess as usize);
-            self.t -= excess;
+    fn sample_at(
+        &self,
+        sample_duration: f32,
+        count: usize,
+        delay: f32,
+        mut out: impl FnMut(usize, Self::Frame),
+    ) {
+        let s0 = self.t.get() - delay * self.rate as f32;
+        let ds = sample_duration * self.rate as f32;
+        for i in 0..count {
+            let s = s0 + ds * i as f32;
+            let x0 = s.trunc() as isize;
+            let fract = s.fract() as f32;
+            let x1 = x0 + 1;
+            out(i, self.get(x0) * (1.0 - fract) + self.get(x1) * fract)
         }
     }
 
     #[inline]
-    fn remaining(&self) -> f32 {
-        f32::INFINITY
-    }
-
-    /// Fetch new data from the sender
-    #[inline]
-    fn prepare(&mut self) {
-        self.inner.update();
+    fn advance(&self, dt: f32) {
+        // TODO: Clamp such that a configurable amount of data remains at t >= 0, to allow repeating
+        // audio rather than gaps
+        let inner = unsafe { &mut *self.inner.get() };
+        self.t
+            .set((self.t.get() + dt * self.rate as f32).min((inner.len() + self.past_size) as f32));
+        let excess = (self.t.get() - self.past_size as f32).trunc();
+        if excess > 0.0 {
+            inner.release(excess as usize);
+            self.t.set(self.t.get() - excess);
+        }
     }
 }
 
@@ -107,11 +124,15 @@ mod tests {
 
     fn assert_seq(recv: &Receiver, start: f32, seq: &[f32]) {
         for (i, &expected) in seq.iter().enumerate() {
-            let actual = recv.sample(start + i as f32);
+            let mut actual = 0.0;
+            recv.sample_at(0.0, 1, -(start + i as f32), |_, x| actual = x);
             if expected != actual {
                 panic!(
                     "expected {:?} from {}, got {:?} from {}",
-                    seq, start, recv.inner, -recv.t
+                    seq,
+                    start,
+                    unsafe { &*recv.inner.get() },
+                    -recv.t.get()
                 );
             }
         }
@@ -119,10 +140,10 @@ mod tests {
 
     #[test]
     fn release_old() {
-        let (mut send, mut recv) = stream(1, 4, 4);
+        let (mut send, recv) = stream(1, 4, 4);
         assert_eq!(send.write(&[1.0, 2.0, 3.0]), 3);
         assert_eq!(send.write(&[4.0, 5.0]), 2);
-        recv.prepare();
+        recv.update();
         assert_seq(&recv, -1.0, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
 
         recv.advance(1.0);
@@ -134,7 +155,7 @@ mod tests {
 
         // Only 4 slots available to the writer
         assert_eq!(send.write(&[6.0, 7.0, 8.0, 9.0, 10.0]), 4);
-        recv.prepare();
+        recv.update();
         assert_seq(&recv, -1.0, &[5.0, 6.0, 7.0, 8.0, 9.0, 0.0]);
     }
 }
