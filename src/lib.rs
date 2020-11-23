@@ -7,14 +7,15 @@ mod samples;
 mod source;
 mod spatial;
 mod spsc;
-pub mod stream;
+mod stream;
 mod swap;
 mod worker;
 
 pub use samples::*;
 pub use source::*;
 pub use spatial::Spatial;
-pub use stream::stream;
+pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
+pub use swap::Swap;
 pub use worker::*;
 
 /// Unitless instantaneous sound wave amplitude measurement
