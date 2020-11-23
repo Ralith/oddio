@@ -3,15 +3,17 @@
 #![warn(missing_docs)]
 
 mod math;
-mod mixer;
 mod samples;
 mod source;
+mod spatial;
 mod spsc;
 pub mod stream;
+mod swap;
 mod worker;
 
 pub use samples::*;
 pub use source::*;
+pub use spatial::Spatial;
 pub use stream::stream;
 pub use worker::*;
 

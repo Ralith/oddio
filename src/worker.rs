@@ -2,59 +2,29 @@ use std::{
     cell::UnsafeCell,
     mem,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
 };
 
-use crate::{
-    math::{add, mix, scale},
-    mixer, spsc, Sample, Source,
-};
+use crate::{spsc, Action, Mix, Sample, Source};
 
-/// Begin building an audio worker
-pub fn worker() -> Builder {
-    Builder::default()
-}
-
-/// Configuration that audio workers are built from
-#[must_use]
-#[derive(Debug, Clone)]
-pub struct Builder {
-    max_delay: f32,
-}
-
-impl Builder {
-    /// Sources are dropped when they ended more than `delay` ago
-    ///
-    /// If this is set too low, distance listeners may hear sources appear to cut off early due to
-    /// sound travel time. Good settings are proportional to the square root of the maximum source
-    /// amplitude.
-    pub fn max_delay(&mut self, delay: Duration) -> &mut Self {
-        self.max_delay = delay.as_secs_f32();
-        self
-    }
-
-    /// Construct a remote control and the worker it controls from this configuration
-    #[must_use]
-    pub fn build(&self) -> (Remote, Worker) {
-        let (send, recv) = spsc::channel(INITIAL_CHANNEL_CAPACITY);
-        let sources = SourceTable::with_capacity(INITIAL_SOURCES_CAPACITY);
-        let remote = Remote {
-            sender: send,
-            sources: sources.clone(),
-            first_free: 0,
-        };
-        let worker = Worker {
-            max_delay: self.max_delay,
-            recv,
-            sources,
-            first_populated: usize::MAX,
-            last_free: INITIAL_SOURCES_CAPACITY - 1,
-        };
-        (remote, worker)
-    }
+/// Build a remote/worker pair
+pub fn worker() -> (Remote, Worker) {
+    let (send, recv) = spsc::channel(INITIAL_CHANNEL_CAPACITY);
+    let sources = SourceTable::with_capacity(INITIAL_SOURCES_CAPACITY);
+    let remote = Remote {
+        sender: send,
+        sources: sources.clone(),
+        first_free: 0,
+    };
+    let worker = Worker {
+        recv,
+        sources,
+        first_populated: usize::MAX,
+        last_free: INITIAL_SOURCES_CAPACITY - 1,
+    };
+    (remote, worker)
 }
 
 #[cfg(not(miri))]
@@ -68,12 +38,6 @@ const INITIAL_CHANNEL_CAPACITY: usize = 3;
 #[cfg(miri)]
 const INITIAL_SOURCES_CAPACITY: usize = 4;
 
-impl Default for Builder {
-    fn default() -> Self {
-        Builder { max_delay: 4.0 }
-    }
-}
-
 /// Handle for controlling a `Worker` from another thread
 pub struct Remote {
     sender: spsc::Sender<Msg>,
@@ -83,52 +47,28 @@ pub struct Remote {
 
 impl Remote {
     /// Begin playing `source`, returning an ID that can be used to manipulate its playback
-    pub fn play<S: Source + 'static>(
+    pub fn play<S: Source<Frame = [Sample; 2]> + Send + 'static>(
         &mut self,
-        mut source: S,
-        position: mint::Point3<f32>,
-        velocity: mint::Vector3<f32>,
-    ) -> SourceId {
-        let data = SourceData {
-            mix: Box::new(move |mixer, state, pos| process_source(&mut source, mixer, state, pos)),
-            state: mixer::State::new(position),
-            ref_position: position,
-            velocity,
-            dt: 0.0,
-            prev_position: position,
-        };
-        let id = match self.alloc(data) {
+        source: S,
+    ) -> Handle<S> {
+        let source = Arc::new(SourceData {
+            stop: AtomicBool::new(false),
+            source: UnsafeCell::new(source),
+        });
+        let id = match self.alloc(source.clone()) {
             Ok(id) => id,
-            Err(data) => {
+            Err(source) => {
                 let sources = SourceTable::with_capacity(2 * self.sources.capacity());
                 // Ensure we don't overwrite any slots that will be imported from the old table
                 self.first_free = self.sources.capacity();
                 self.sources = sources.clone();
                 self.send(Msg::ReallocSources(sources));
-                self.alloc(data)
+                self.alloc(source)
                     .unwrap_or_else(|_| unreachable!("newly allocated nonzero-capacity buffer"))
             }
         };
         self.send(Msg::Play(id.index));
-        id
-    }
-
-    /// Stop playing `source` and discard it
-    pub fn stop(&mut self, source: SourceId) {
-        self.send(Msg::Stop(source));
-    }
-
-    /// Update the position and velocity of `source`
-    ///
-    /// Large discontinuities in position imply high velocities, which can lead to interesting
-    /// doppler effects even if the explicit velocities are small.
-    pub fn set_motion(
-        &mut self,
-        source: SourceId,
-        position: mint::Point3<f32>,
-        velocity: mint::Vector3<f32>,
-    ) {
-        self.send(Msg::SetMotion(source, position, velocity));
+        Handle { inner: source }
     }
 
     fn send(&mut self, msg: Msg) {
@@ -144,20 +84,21 @@ impl Remote {
         }
     }
 
-    fn alloc(&mut self, source: SourceData) -> Result<SourceId, SourceData> {
+    fn alloc(
+        &mut self,
+        source: Arc<SourceData<dyn Mix>>,
+    ) -> Result<SourceId, Arc<SourceData<dyn Mix>>> {
         if self.first_free == usize::MAX {
             return Err(source);
         }
         let index = self.first_free;
         let slot = &self.sources.slots[index];
-        // Acquire ordering ensures we don't read the next free slot's generation until it's
-        // updated.
+        // Acquire ordering ensures the next `next` value is read correctly
         self.first_free = slot.next.load(Ordering::Acquire);
         unsafe {
             (*slot.source.get()) = Some(source);
             Ok(SourceId {
                 index: index as u32,
-                generation: slot.generation.get().read(),
             })
         }
     }
@@ -165,11 +106,33 @@ impl Remote {
 
 unsafe impl Send for Remote {}
 
+/// Handle to an active source
+pub struct Handle<T> {
+    inner: Arc<SourceData<T>>,
+}
+
+// Sound because `T` is not exposed by any safe interface
+unsafe impl<T> Sync for Handle<T> {}
+
+impl<T> Handle<T> {
+    /// Stop playing the source, allowing it to be dropped on a future `play` invocation
+    pub fn stop(&self) {
+        self.inner.stop.store(true, Ordering::Relaxed);
+    }
+
+    /// Access the source
+    ///
+    /// Because sources have interior mutability and are hence usually `!Sync`, this must be used to
+    /// construct safe interfaces when access to shared state is requird.
+    pub fn get(&self) -> *mut T {
+        self.inner.source.get()
+    }
+}
+
 /// Lightweight handle for a source actively being played on a worker
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct SourceId {
     index: u32,
-    generation: u32,
 }
 
 /// Writes output audio samples on demand
@@ -177,7 +140,6 @@ pub struct SourceId {
 /// For real-time audio, this should be passed into the audio worker thread, e.g. the data callback
 /// in cpal's `build_output_stream`.
 pub struct Worker {
-    max_delay: f32,
     recv: spsc::Receiver<Msg>,
     sources: Arc<SourceTable>,
     first_populated: usize,
@@ -193,24 +155,33 @@ impl Worker {
     pub fn render(&mut self, rate: u32, samples: &mut [[Sample; 2]]) {
         self.drain_msgs();
 
-        let dt = samples.len() as f32 / rate as f32;
-        let mut mixer = mixer::Mixer::new(rate, samples);
+        let sample_duration = 1.0 / rate as f32;
         let mut i = self.first_populated;
         while i != usize::MAX {
             let slot = &self.sources.slots[i];
-            let source = unsafe { (*slot.source.get()).as_mut().unwrap() };
-
-            source.dt += dt;
-            let position = source.smoothed_position();
-            let remaining = (source.mix)(&mut mixer, &mut source.state, position);
-            if remaining < -self.max_delay {
-                unsafe {
-                    self.sources
-                        .drop_source(i, &mut self.last_free, &mut self.first_populated);
+            let current = i;
+            i = slot.next.load(Ordering::Relaxed); // Read next before we might clobber it in drop_source
+            unsafe {
+                let source = (*slot.source.get()).as_mut().unwrap();
+                if source.stop.load(Ordering::Relaxed) {
+                    self.sources.drop_source(
+                        current,
+                        &mut self.last_free,
+                        &mut self.first_populated,
+                    );
+                } else {
+                    match (*source.source.get()).mix(sample_duration, samples) {
+                        Action::Retain => {}
+                        Action::Drop => {
+                            self.sources.drop_source(
+                                current,
+                                &mut self.last_free,
+                                &mut self.first_populated,
+                            );
+                        }
+                    }
                 }
             }
-
-            i = slot.next.load(Ordering::Relaxed);
         }
     }
 
@@ -314,24 +285,6 @@ impl Worker {
                     }
                     self.first_populated = index;
                 }
-                Stop(id) => unsafe {
-                    if self.sources.try_get(id).is_some() {
-                        self.sources.drop_source(
-                            id.index as usize,
-                            &mut self.last_free,
-                            &mut self.first_populated,
-                        );
-                    }
-                },
-                SetMotion(id, pos, vel) => {
-                    if let Some(slot) = unsafe { self.sources.try_get(id) } {
-                        let source = unsafe { (*slot.source.get()).as_mut().unwrap() };
-                        source.prev_position = source.smoothed_position();
-                        source.ref_position = pos;
-                        source.velocity = vel;
-                        source.dt = 0.0;
-                    }
-                }
             }
         }
         if let Some(recv) = new_channel {
@@ -362,7 +315,6 @@ impl SourceTable {
                 source: UnsafeCell::new(None),
                 prev: UnsafeCell::new(i.checked_sub(1).unwrap_or(usize::MAX)),
                 next: AtomicUsize::new(if i + 1 == n { usize::MAX } else { i + 1 }),
-                generation: UnsafeCell::new(0),
             })
             .collect::<Arc<[_]>>();
         unsafe { mem::transmute(slots) }
@@ -391,8 +343,6 @@ impl SourceTable {
             (*self.slots[next_val].prev.get()) = *slot.prev.get();
         }
 
-        // Clean up
-        (*slot.generation.get()) = (*slot.generation.get()).wrapping_add(1);
         // Note that we leave `slot.source` populated here, because freeing it might hit a lock in
         // the global allocator, which could undermine our real-time guarantee. Instead, we let the
         // `Remote` drop the old value the next time the slot is reused.
@@ -400,94 +350,33 @@ impl SourceTable {
         // Append to freelist
         slot.next.store(usize::MAX, Ordering::Relaxed);
         (*slot.prev.get()) = *last_free;
-        // Release ordering ensures the prior write to slot.generation above is visible.
+        // Release ordering ensures the prior write to `slot.next` above is visible.
         self.slots[*last_free].next.store(index, Ordering::Release);
         *last_free = index;
-    }
-
-    unsafe fn try_get(&self, id: SourceId) -> Option<&Slot> {
-        let slot = &self.slots[id.index as usize];
-        if *slot.generation.get() != id.generation {
-            return None;
-        }
-        Some(slot)
     }
 }
 
 struct Slot {
     /// When on the freelist, may be written by `Remote`. When populated, may be read by
     /// `Worker`. Other access is unsound!
-    source: UnsafeCell<Option<SourceData>>,
+    source: UnsafeCell<Option<Arc<SourceData<dyn Mix>>>>,
     /// Accessed by `worker` only.
     prev: UnsafeCell<usize>,
     /// When on the freelist, may be read by `Remote`. Written by `Worker` when moving between
     /// lists.
     next: AtomicUsize,
-    /// Accessed by `Worker` only.
-    generation: UnsafeCell<u32>,
-}
-
-struct SourceData {
-    /// Invokes `process_source` and returns seconds remaining
-    ///
-    /// We could use a Box<dyn Source> instead, but by encapsulating all use of the `Source` trait
-    /// we can reduce the number of virtual calls to one per source.
-    mix: Box<dyn FnMut(&mut mixer::Mixer, &mut mixer::State, mint::Point3<f32>) -> f32>,
-    state: mixer::State,
-    /// Latest explicitly set position
-    ref_position: mint::Point3<f32>,
-    /// Latest explicitly set velocity
-    velocity: mint::Vector3<f32>,
-    /// Seconds since ref_position was set
-    dt: f32,
-    /// Smoothed position estimate when ref_position was set
-    prev_position: mint::Point3<f32>,
-}
-
-impl SourceData {
-    fn smoothed_position(&self) -> mint::Point3<f32> {
-        let position_change = scale(self.velocity, self.dt);
-        let naive_position = add(self.prev_position, position_change);
-        let intended_position = add(self.ref_position, position_change);
-        mix(
-            naive_position,
-            intended_position,
-            (self.dt / POSITION_SMOOTHING_PERIOD).min(1.0),
-        )
-    }
 }
 
 enum Msg {
     ReallocChannel(spsc::Receiver<Msg>),
     ReallocSources(Arc<SourceTable>),
     Play(u32),
-    Stop(SourceId),
-    SetMotion(SourceId, mint::Point3<f32>, mint::Vector3<f32>),
 }
 
-fn process_source<S: Source>(
-    source: &mut S,
-    mixer: &mut mixer::Mixer,
-    state: &mut mixer::State,
-    next_pos: mint::Point3<f32>,
-) -> f32 {
-    source.prepare();
-    mixer.mix(mixer::Input {
-        source,
-        state,
-        position_wrt_listener: next_pos,
-    });
-    source.advance(mixer.samples.len() as f32 * (source.rate() as f32 / mixer.rate as f32));
-    source.remaining() / source.rate() as f32
+struct SourceData<S: ?Sized> {
+    stop: AtomicBool,
+    source: UnsafeCell<S>,
 }
-
-/// Seconds over which to smooth position discontinuities
-///
-/// Discontinuities arise because we only process commands at discrete intervals, and because the
-/// caller probably isn't running at perfectly even intervals either. If smoothed over too short a
-/// period, discontinuities will cause abrupt changes in effective velocity, which are distinctively
-/// audible due to the doppler effect.
-const POSITION_SMOOTHING_PERIOD: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
@@ -497,30 +386,12 @@ mod tests {
     const RATE: u32 = 10;
 
     #[test]
-    fn drop_finished() {
-        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
-        let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
-        assert_eq!(worker.source_count(), 0);
-        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY);
-        remote.play(source, [0.0; 3].into(), [0.0; 3].into());
-        worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 0-9
-        assert_eq!(worker.source_count(), 1);
-        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY - 1);
-        worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 10-19
-        assert_eq!(worker.source_count(), 1);
-        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY - 1);
-        worker.render(RATE, &mut [[0.0; 2]; RATE as usize]); // 20-29
-        assert_eq!(worker.source_count(), 0);
-        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY);
-    }
-
-    #[test]
     fn realloc_sources() {
-        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
+        let (mut remote, mut worker) = worker();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         assert_eq!(worker.source_count(), 0);
         for i in 1..=(INITIAL_SOURCES_CAPACITY + 2) {
-            remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+            remote.play(source.clone().into_stereo());
             worker.render(RATE, &mut []); // Process messages
             assert_eq!(worker.source_count(), i);
         }
@@ -529,10 +400,10 @@ mod tests {
 
     #[test]
     fn realloc_channel() {
-        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
+        let (mut remote, mut worker) = worker();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         for _ in 0..(INITIAL_CHANNEL_CAPACITY + 2) {
-            remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+            remote.play(source.clone().into_stereo());
         }
         assert_eq!(remote.sender.capacity(), 1 + 2 * INITIAL_CHANNEL_CAPACITY);
         assert_eq!(worker.source_count(), 0);
@@ -544,26 +415,19 @@ mod tests {
 
     #[test]
     fn reuse_slot() {
-        let (mut remote, mut worker) = worker().max_delay(Duration::from_secs(1)).build();
+        let (mut remote, mut worker) = worker();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
-        let first = remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
-        assert_eq!(first.index, 0);
-        assert_eq!(first.generation, 0);
-        remote.stop(first);
-        for _ in 1..INITIAL_SOURCES_CAPACITY {
-            let id = remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
-            assert_eq!(id.generation, 0);
-            remote.stop(id);
+        for _ in 0..INITIAL_SOURCES_CAPACITY {
+            let handle = remote.play(source.clone().into_stereo());
+            handle.stop();
             worker.render(RATE, &mut []); // Process messages
+            assert_eq!(worker.source_count(), 0);
         }
-        assert_eq!(worker.source_count(), 0);
-        assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY);
-        let reused = remote.play(source.clone(), [0.0; 3].into(), [0.0; 3].into());
+        remote.play(source.clone().into_stereo());
         assert_eq!(remote.sources.slots.len(), INITIAL_SOURCES_CAPACITY);
-        assert_eq!(first.index, reused.index);
-        assert_ne!(first.generation, reused.generation);
         worker.render(RATE, &mut []); // Process messages
         assert_eq!(worker.source_count(), 1);
         assert_eq!(worker.free_count(), INITIAL_SOURCES_CAPACITY - 1);
+        assert_eq!(worker.first_populated, 0);
     }
 }

@@ -27,9 +27,16 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let source = oddio::SamplesSource::from(boop);
 
-    let (mut remote, mut worker) = oddio::worker().build();
+    let speed = 50.0;
+
+    let source = oddio::Spatial::new(
+        oddio::SamplesSource::from(boop),
+        [-speed, 10.0, 0.0].into(),
+        [speed, 0.0, 0.0].into(),
+    );
+
+    let (mut remote, mut worker) = oddio::worker();
 
     let stream = device
         .build_output_stream(
@@ -48,8 +55,7 @@ fn main() {
         .unwrap();
     stream.play().unwrap();
 
-    let speed = 50.0;
-    let source = remote.play(source, [-speed, 10.0, 0.0].into(), [speed, 0.0, 0.0].into());
+    let mut source = remote.play(source);
 
     let start = Instant::now();
 
@@ -62,8 +68,7 @@ fn main() {
         // This is in principle a no-op because the velocity isn't changing, but due to imprecise
         // sleep times and the fact that the audio thread runs at unaligned intervals means that the
         // this would produce glitches if not for smoothing done by the worker.
-        remote.set_motion(
-            source,
+        source.set_motion(
             [-speed + speed * dt.as_secs_f32(), 10.0, 0.0].into(),
             [speed, 0.0, 0.0].into(),
         );
