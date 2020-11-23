@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Action, Sample, Seek, Source};
+use crate::{Action, Batch, Sample, Source};
 
 /// A sequence of audio samples at a particular rate
 #[derive(Debug)]
@@ -130,7 +130,7 @@ impl SamplesSource {
 }
 
 impl Source for SamplesSource {
-    type Frame = Sample;
+    type Batch = SamplesBatch;
 
     #[inline]
     fn update(&self) -> Action {
@@ -138,31 +138,30 @@ impl Source for SamplesSource {
     }
 
     #[inline]
-    fn sample(&self, sample_duration: f32, count: usize, out: impl FnMut(usize, Self::Frame)) {
-        self.sample_at(sample_duration, count, 0.0, out);
-        self.advance(sample_duration * count as f32);
-    }
-}
-
-impl Seek for SamplesSource {
-    #[inline]
-    fn sample_at(
-        &self,
-        sample_duration: f32,
-        count: usize,
-        delay: f32,
-        mut out: impl FnMut(usize, Self::Frame),
-    ) {
-        let s0 = (self.t.get() - f64::from(delay)) * self.data.rate as f64;
-        let ds = f64::from(sample_duration) * self.data.rate as f64;
-        for i in 0..count {
-            out(i, self.data.sample(s0 + (i as f64) * ds));
+    fn sample(&self, t: f32, dt: f32) -> SamplesBatch {
+        SamplesBatch {
+            s0: (self.t.get() + f64::from(t)) * f64::from(self.data.rate),
+            ds: f64::from(dt) * f64::from(self.data.rate),
         }
     }
 
     #[inline]
     fn advance(&self, dt: f32) {
         self.t.set(self.t.get() + f64::from(dt));
+    }
+}
+
+/// Batch of samples from a static set of samples
+pub struct SamplesBatch {
+    s0: f64,
+    ds: f64,
+}
+
+impl Batch<SamplesSource> for SamplesBatch {
+    type Frame = Sample;
+    #[inline]
+    fn get(&self, source: &SamplesSource, t: f32) -> Sample {
+        source.data.sample(self.s0 + f64::from(t) * self.ds)
     }
 }
 

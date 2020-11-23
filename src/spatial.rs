@@ -4,23 +4,23 @@ use std::ops::{Index, IndexMut};
 use crate::{
     math::{add, dot, mix, norm, scale, sub},
     swap::Swap,
-    Action, Handle, Sample, Seek, Source,
+    Action, Batch, Handle, Sample, Source,
 };
 
 /// Places a mono source at an adjustable position and velocity wrt. the listener
 ///
 /// The listener faces directly along the -Z axis, with +X to the right.
 pub struct Spatial<T> {
-    source: T,
+    inner: T,
     motion: Swap<Motion>,
     state: UnsafeCell<State>,
 }
 
 impl<T> Spatial<T> {
     /// Construct a spatial source with an initial position and velocity
-    pub fn new(source: T, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
+    pub fn new(inner: T, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
         Self {
-            source,
+            inner,
             motion: Swap::new(Motion { position, velocity }),
             state: UnsafeCell::new(State {
                 ears: [
@@ -36,9 +36,10 @@ impl<T> Spatial<T> {
 
 impl<T> Source for Spatial<T>
 where
-    T: Seek + Source<Frame = Sample>,
+    T: Source,
+    T::Batch: Batch<T, Frame = Sample>,
 {
-    type Frame = [Sample; 2];
+    type Batch = SpatialBatch<T::Batch>;
 
     fn update(&self) -> Action {
         unsafe {
@@ -51,58 +52,69 @@ where
                 debug_assert_eq!(orig_next.position, (*self.motion.received()).position);
             }
         }
-        self.source.update()
+        self.inner.update()
     }
 
-    fn sample(&self, sample_duration: f32, count: usize, mut out: impl FnMut(usize, Self::Frame)) {
+    fn sample(&self, t: f32, world_dt: f32) -> SpatialBatch<T::Batch> {
         unsafe {
             let state = &mut *self.state.get();
-            state.dt += count as f32 * sample_duration;
+            state.dt += world_dt;
             let next_position = state.smoothed_position(&*self.motion.received());
-            sample_helper(
-                &self.source,
-                state,
-                next_position,
-                count,
-                &mut out,
-                sample_duration,
-            );
+            let mut t0 = [0.0; 2];
+            let mut dt = [0.0; 2];
+            let mut initial_attenuation = [0.0; 2];
+            let mut attenuation_change = [0.0; 2];
+            for &ear in [Ear::Left, Ear::Right].iter() {
+                t0[ear] = state.ears[ear].offset / world_dt;
+                let next_state = EarState::new(next_position, ear);
+                let offset_change = next_state.offset - state.ears[ear].offset;
+                dt[ear] = (world_dt + offset_change) / world_dt;
+                initial_attenuation[ear] = state.ears[ear].attenuation;
+                attenuation_change[ear] = next_state.attenuation - state.ears[ear].attenuation;
+                state.ears[ear] = next_state;
+            }
+            SpatialBatch {
+                inner: self.inner.sample(t, world_dt),
+                t0,
+                dt,
+                initial_attenuation,
+                attenuation_change,
+            }
         }
+    }
+
+    fn advance(&self, dt: f32) {
+        self.inner.advance(dt);
     }
 }
 
-fn sample_helper(
-    source: &impl Seek<Frame = Sample>,
-    state: &mut State,
-    next_position: mint::Point3<f32>,
-    count: usize,
-    out: &mut impl FnMut(usize, [Sample; 2]),
-    sample_duration: f32,
-) {
-    let mut delay0 = [0.0; 2];
-    let mut dd = [0.0; 2];
-    let mut attenuation0 = [0.0; 2];
-    let mut d_attenuation = [0.0; 2];
-    let dt_world = count as f32 * sample_duration;
-    for &ear in [Ear::Left, Ear::Right].iter() {
-        delay0[ear] = state.ears[ear].delay;
-        let next_state = EarState::new(next_position, ear);
-        let delay_shrink = state.ears[ear].delay - next_state.delay;
-        dd[ear] = (dt_world + delay_shrink) / count as f32;
-        attenuation0[ear] = state.ears[ear].attenuation;
-        d_attenuation[ear] = (next_state.attenuation - state.ears[ear].attenuation) / count as f32;
-        state.ears[ear] = next_state;
-    }
-    for i in 0..count {
-        let mut frame = [0.0; 2];
+/// Batch for sampling spatial sources
+pub struct SpatialBatch<T> {
+    inner: T,
+    t0: [f32; 2],
+    dt: [f32; 2],
+    initial_attenuation: [f32; 2],
+    attenuation_change: [f32; 2],
+}
+
+impl<T> Batch<Spatial<T>> for SpatialBatch<T::Batch>
+where
+    T: Source,
+    T::Batch: Batch<T, Frame = Sample>,
+{
+    type Frame = [Sample; 2];
+
+    fn get(&self, source: &Spatial<T>, t: f32) -> [Sample; 2] {
+        let mut out = [0.0; 2];
         for &ear in [Ear::Left, Ear::Right].iter() {
-            source.sample_at(dd[ear], 1, delay0[ear] - dd[ear] * i as f32, |_, x| {
-                frame[ear] = (attenuation0[ear] + d_attenuation[ear] * i as f32) * x;
-            });
+            let attenuation = self.initial_attenuation[ear] + t * self.attenuation_change[ear];
+            out[ear] = attenuation
+                * self
+                    .inner
+                    .get(&source.inner, self.t0[ear] + t * self.dt[ear])
         }
-        out(i, frame);
+        out
     }
-    source.advance(dt_world);
 }
 
 impl<T> Handle<Spatial<T>> {
@@ -152,8 +164,8 @@ const POSITION_SMOOTHING_PERIOD: f32 = 0.5;
 
 #[derive(Debug, Clone)]
 struct EarState {
-    /// How far behind current this sound was most recently sampled
-    delay: f32,
+    /// Time offset at which this sound was most recently sampled
+    offset: f32,
     /// Attenuation most recently applied
     attenuation: f32,
 }
@@ -161,7 +173,7 @@ struct EarState {
 impl EarState {
     fn new(position_wrt_listener: mint::Point3<f32>, ear: Ear) -> Self {
         let distance = norm(sub(position_wrt_listener, ear.pos())).max(0.1);
-        let delay = distance * (1.0 / SPEED_OF_SOUND);
+        let offset = distance * (-1.0 / SPEED_OF_SOUND);
         let distance_attenuation = 1.0 / distance;
         let stereo_attenuation = 1.0
             + dot(
@@ -169,7 +181,7 @@ impl EarState {
                 scale(position_wrt_listener.into(), 1.0 / distance),
             );
         Self {
-            delay,
+            offset,
             attenuation: stereo_attenuation * distance_attenuation,
         }
     }

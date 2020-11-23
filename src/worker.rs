@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use crate::{spsc, Action, Mix, Sample, Source};
+use crate::{spsc, Action, Batch, Mix, Sample, Source};
 
 /// Build a remote/worker pair
 pub fn worker() -> (Remote, Worker) {
@@ -47,10 +47,11 @@ pub struct Remote {
 
 impl Remote {
     /// Begin playing `source`, returning an ID that can be used to manipulate its playback
-    pub fn play<S: Source<Frame = [Sample; 2]> + Send + 'static>(
-        &mut self,
-        source: S,
-    ) -> Handle<S> {
+    pub fn play<S>(&mut self, source: S) -> Handle<S>
+    where
+        S: Source + Send + 'static,
+        S::Batch: Batch<S, Frame = [Sample; 2]>,
+    {
         let source = Arc::new(SourceData {
             stop: AtomicBool::new(false),
             source: UnsafeCell::new(source),

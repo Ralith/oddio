@@ -13,7 +13,7 @@ mod worker;
 
 pub use samples::*;
 pub use source::*;
-pub use spatial::Spatial;
+pub use spatial::{Spatial, SpatialBatch};
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use swap::Swap;
 pub use worker::*;
