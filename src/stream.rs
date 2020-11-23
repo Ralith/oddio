@@ -35,7 +35,7 @@ pub struct Sender {
 }
 
 impl Sender {
-    /// Add more samples to play
+    /// Add more samples. Returns the number of samples read.
     pub fn write(&mut self, samples: &[Sample]) -> usize {
         self.inner.send_from_slice(samples)
     }
