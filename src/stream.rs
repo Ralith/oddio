@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, UnsafeCell};
 
-use crate::{spsc, Action, Sample, Seek, Source};
+use crate::{spsc, Action, Batch, Sample, Source};
 
 /// Construct an unbounded stream of dynamic audio
 ///
@@ -66,7 +66,7 @@ impl Receiver {
 }
 
 impl Source for Receiver {
-    type Frame = Sample;
+    type Batch = StreamBatch;
 
     #[inline]
     fn update(&self) -> Action {
@@ -77,29 +77,10 @@ impl Source for Receiver {
     }
 
     #[inline]
-    fn sample(&self, sample_duration: f32, count: usize, out: impl FnMut(usize, Self::Frame)) {
-        self.sample_at(sample_duration, count, 0.0, out);
-        self.advance(sample_duration * count as f32);
-    }
-}
-
-impl Seek for Receiver {
-    #[inline]
-    fn sample_at(
-        &self,
-        sample_duration: f32,
-        count: usize,
-        delay: f32,
-        mut out: impl FnMut(usize, Self::Frame),
-    ) {
-        let s0 = self.t.get() - delay * self.rate as f32;
-        let ds = sample_duration * self.rate as f32;
-        for i in 0..count {
-            let s = s0 + ds * i as f32;
-            let x0 = s.trunc() as isize;
-            let fract = s.fract() as f32;
-            let x1 = x0 + 1;
-            out(i, self.get(x0) * (1.0 - fract) + self.get(x1) * fract)
+    fn sample(&self, t: f32, dt: f32) -> StreamBatch {
+        StreamBatch {
+            s0: self.t.get() + t * self.rate as f32,
+            ds: dt * self.rate as f32,
         }
     }
 
@@ -118,14 +99,31 @@ impl Seek for Receiver {
     }
 }
 
+/// Batch of samples received from a stream
+pub struct StreamBatch {
+    s0: f32,
+    ds: f32,
+}
+
+impl Batch<Receiver> for StreamBatch {
+    type Frame = Sample;
+
+    fn get(&self, source: &Receiver, t: f32) -> Sample {
+        let s = self.s0 + self.ds * t;
+        let x0 = s.trunc() as isize;
+        let fract = s.fract() as f32;
+        let x1 = x0 + 1;
+        source.get(x0) * (1.0 - fract) + source.get(x1) * fract
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn assert_seq(recv: &Receiver, start: f32, seq: &[f32]) {
         for (i, &expected) in seq.iter().enumerate() {
-            let mut actual = 0.0;
-            recv.sample_at(0.0, 1, -(start + i as f32), |_, x| actual = x);
+            let actual = recv.sample(start + i as f32, 1.0).get(&recv, 0.0);
             if expected != actual {
                 panic!(
                     "expected {:?} from {}, got {:?} from {}",
