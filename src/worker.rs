@@ -395,7 +395,9 @@ struct Slot {
     /// Accessed by `worker` only.
     prev: UnsafeCell<usize>,
     /// When on the freelist, may be read by `Remote`. Written by `Worker` when moving between
-    /// lists.
+    /// lists. The worker can safely move off freelist because the remote is guaranteed not to read
+    /// a slot's `next` field after sending a `Play` message addressing it, until the worker frees
+    /// it again.
     next: AtomicUsize,
 }
 
