@@ -4,7 +4,7 @@ use std::ops::{Index, IndexMut};
 use crate::{
     math::{add, dot, mix, norm, scale, sub},
     swap::Swap,
-    Action, Batch, Handle, Sample, Source,
+    Action, Handle, Sample, Sampler, Source,
 };
 
 /// Places a mono source at an adjustable position and velocity wrt. the listener
@@ -37,9 +37,9 @@ impl<T> Spatial<T> {
 impl<T> Source for Spatial<T>
 where
     T: Source,
-    T::Batch: Batch<T, Frame = Sample>,
+    T::Sampler: Sampler<T, Frame = Sample>,
 {
-    type Batch = SpatialBatch<T::Batch>;
+    type Sampler = SpatialSampler<T::Sampler>;
 
     fn update(&self) -> Action {
         unsafe {
@@ -55,7 +55,7 @@ where
         self.inner.update()
     }
 
-    fn sample(&self, t: f32, world_dt: f32) -> SpatialBatch<T::Batch> {
+    fn sample(&self, t: f32, world_dt: f32) -> SpatialSampler<T::Sampler> {
         unsafe {
             let state = &mut *self.state.get();
             state.dt += world_dt;
@@ -73,7 +73,7 @@ where
                 attenuation_change[ear] = next_state.attenuation - state.ears[ear].attenuation;
                 state.ears[ear] = next_state;
             }
-            SpatialBatch {
+            SpatialSampler {
                 inner: self.inner.sample(t, world_dt),
                 t0,
                 dt,
@@ -88,8 +88,8 @@ where
     }
 }
 
-/// Batch for sampling spatial sources
-pub struct SpatialBatch<T> {
+/// Sampler for [`Spatial`]
+pub struct SpatialSampler<T> {
     inner: T,
     t0: [f32; 2],
     dt: [f32; 2],
@@ -97,10 +97,10 @@ pub struct SpatialBatch<T> {
     attenuation_change: [f32; 2],
 }
 
-impl<T> Batch<Spatial<T>> for SpatialBatch<T::Batch>
+impl<T> Sampler<Spatial<T>> for SpatialSampler<T::Sampler>
 where
     T: Source,
-    T::Batch: Batch<T, Frame = Sample>,
+    T::Sampler: Sampler<T, Frame = Sample>,
 {
     type Frame = [Sample; 2];
 

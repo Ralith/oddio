@@ -11,7 +11,7 @@ use crate::Sample;
 /// threads, permitting e.g. the use of atomics for live controls.
 pub trait Source {
     /// Helper returned by `sample` to expose a range of frames
-    type Batch: Batch<Self>;
+    type Sampler: Sampler<Self>;
 
     /// Update internal state from controls, if any
     fn update(&self) -> Action;
@@ -19,7 +19,7 @@ pub trait Source {
     /// Construct a sampler around `t` relative to the internal cursor, covering `dt` seconds
     ///
     /// For best precision, `dt` should be small.
-    fn sample(&self, t: f32, dt: f32) -> Self::Batch;
+    fn sample(&self, t: f32, dt: f32) -> Self::Sampler;
 
     /// Advance time by `dt` seconds, which may be negative
     ///
@@ -35,7 +35,7 @@ pub trait Source {
     fn into_stereo(self) -> MonoToStereo<Self>
     where
         Self: Sized,
-        Self::Batch: Batch<Self, Frame = Sample>,
+        Self::Sampler: Sampler<Self, Frame = Sample>,
     {
         MonoToStereo(self)
     }
@@ -44,7 +44,7 @@ pub trait Source {
 /// Pseudo-iterator over a sequence of frames
 ///
 /// A dedicated trait allows us to work around the absence of GATs.
-pub trait Batch<T: ?Sized> {
+pub trait Sampler<T: ?Sized> {
     /// Type of frames yielded by `get`, e.g. `[Sample; 2]` for stereo.
     type Frame;
 
@@ -75,16 +75,16 @@ pub struct MonoToStereo<T>(pub T);
 
 impl<T: Source> Source for MonoToStereo<T>
 where
-    T::Batch: Batch<T, Frame = Sample>,
+    T::Sampler: Sampler<T, Frame = Sample>,
 {
-    type Batch = MonoToStereoBatch<T::Batch>;
+    type Sampler = MonoToStereoSampler<T::Sampler>;
 
     fn update(&self) -> Action {
         self.0.update()
     }
 
-    fn sample(&self, t: f32, dt: f32) -> MonoToStereoBatch<T::Batch> {
-        MonoToStereoBatch(self.0.sample(t, dt))
+    fn sample(&self, t: f32, dt: f32) -> MonoToStereoSampler<T::Sampler> {
+        MonoToStereoSampler(self.0.sample(t, dt))
     }
 
     fn advance(&self, dt: f32) {
@@ -92,13 +92,13 @@ where
     }
 }
 
-/// Batch of stereo samples produced from a mono signal
-pub struct MonoToStereoBatch<T>(pub T);
+/// Sampler of stereo samples produced from a mono signal
+pub struct MonoToStereoSampler<T>(pub T);
 
-impl<T> Batch<MonoToStereo<T>> for MonoToStereoBatch<T::Batch>
+impl<T> Sampler<MonoToStereo<T>> for MonoToStereoSampler<T::Sampler>
 where
     T: Source,
-    T::Batch: Batch<T, Frame = Sample>,
+    T::Sampler: Sampler<T, Frame = Sample>,
 {
     type Frame = [Sample; 2];
     fn get(&self, source: &MonoToStereo<T>, t: f32) -> Self::Frame {
@@ -114,7 +114,7 @@ pub(crate) trait Mix {
 
 impl<T: Source> Mix for T
 where
-    T::Batch: Batch<T, Frame = [Sample; 2]>,
+    T::Sampler: Sampler<T, Frame = [Sample; 2]>,
 {
     unsafe fn mix(&self, sample_duration: f32, out: &mut [[Sample; 2]]) -> Action {
         let act = self.update();
