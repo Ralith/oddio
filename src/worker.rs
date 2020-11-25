@@ -1,5 +1,6 @@
 use std::{
     cell::UnsafeCell,
+    collections::VecDeque,
     mem,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -17,6 +18,8 @@ pub fn worker() -> (Remote, Worker) {
         sender: send,
         sources: sources.clone(),
         first_free: 0,
+        old_senders: VecDeque::new(),
+        old_sources: VecDeque::new(),
     };
     let worker = Worker {
         recv,
@@ -43,6 +46,9 @@ pub struct Remote {
     sender: spsc::Sender<Msg>,
     sources: Arc<SourceTable>,
     first_free: usize,
+    // Handles retained to ensure the worker thread doesn't call free
+    old_senders: VecDeque<spsc::Sender<Msg>>,
+    old_sources: VecDeque<Arc<SourceTable>>,
 }
 
 impl Remote {
@@ -52,6 +58,7 @@ impl Remote {
         S: Source + Send + 'static,
         S::Sampler: Sampler<S, Frame = [Sample; 2]>,
     {
+        self.gc();
         let source = Arc::new(SourceData {
             stop: AtomicBool::new(false),
             source: UnsafeCell::new(source),
@@ -62,7 +69,8 @@ impl Remote {
                 let sources = SourceTable::with_capacity(2 * self.sources.capacity());
                 // Ensure we don't overwrite any slots that will be imported from the old table
                 self.first_free = self.sources.capacity();
-                self.sources = sources.clone();
+                let old = mem::replace(&mut self.sources, sources.clone());
+                self.old_sources.push_back(old);
                 self.send(Msg::ReallocSources(sources));
                 self.alloc(source)
                     .unwrap_or_else(|_| unreachable!("newly allocated nonzero-capacity buffer"))
@@ -72,6 +80,7 @@ impl Remote {
         Handle { inner: source }
     }
 
+    /// Send a message to the worker thread, allocating more storage to do so if necessary
     fn send(&mut self, msg: Msg) {
         if let Err(msg) = self.sender.send(msg, 1) {
             // Channel would become full; allocate a new one
@@ -81,10 +90,12 @@ impl Remote {
                 .unwrap_or_else(|_| unreachable!("a space was reserved for this message"));
             send.send(msg, 0)
                 .unwrap_or_else(|_| unreachable!("newly allocated nonzero-capacity queue"));
-            self.sender = send;
+            let old = mem::replace(&mut self.sender, send);
+            self.old_senders.push_back(old);
         }
     }
 
+    /// Allocate a slot for a new source
     fn alloc(
         &mut self,
         source: Arc<SourceData<dyn Mix>>,
@@ -102,6 +113,26 @@ impl Remote {
                 index: index as u32,
             })
         }
+    }
+
+    /// Clean up unreferenced resources left by the worker thread
+    fn gc(&mut self) {
+        // By retaining these and dropping them only after the worker thread has dropped its sides,
+        // we can avoid calling free and potentially hitching in the real-time context.
+        while let Some(sender) = self.old_senders.front_mut() {
+            if !sender.is_closed() {
+                break;
+            }
+            self.old_senders.pop_front();
+        }
+        while let Some(source) = self.old_sources.front_mut() {
+            if Arc::get_mut(source).is_none() {
+                break;
+            }
+            self.old_sources.pop_front();
+        }
+        // We don't bother garbage collecting stopped sources since that'll happen implicitly when
+        // new sources are added.
     }
 }
 

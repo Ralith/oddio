@@ -91,6 +91,12 @@ impl<T> Sender<T> {
             .store((write + 1) % size, Ordering::Release);
         Ok(())
     }
+
+    /// Whether the receiver has been dropped
+    // Could be `&self` since we don't allow new references to be created, but :effort:
+    pub fn is_closed(&mut self) -> bool {
+        Arc::get_mut(&mut self.shared).is_some()
+    }
 }
 
 pub struct Receiver<T> {
