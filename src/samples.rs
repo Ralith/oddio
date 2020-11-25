@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Action, Batch, Sample, Source};
+use crate::{Action, Sample, Sampler, Source};
 
 /// A sequence of audio samples at a particular rate
 #[derive(Debug)]
@@ -130,7 +130,7 @@ impl SamplesSource {
 }
 
 impl Source for SamplesSource {
-    type Batch = SamplesBatch;
+    type Sampler = SamplesSampler;
 
     #[inline]
     fn update(&self) -> Action {
@@ -138,8 +138,8 @@ impl Source for SamplesSource {
     }
 
     #[inline]
-    fn sample(&self, t: f32, dt: f32) -> SamplesBatch {
-        SamplesBatch {
+    fn sample(&self, t: f32, dt: f32) -> SamplesSampler {
+        SamplesSampler {
             s0: (self.t.get() + f64::from(t)) * f64::from(self.data.rate),
             ds: f64::from(dt) * f64::from(self.data.rate),
         }
@@ -151,13 +151,13 @@ impl Source for SamplesSource {
     }
 }
 
-/// Batch of samples from a static set of samples
-pub struct SamplesBatch {
+/// Sampler for [`SamplesSource`]
+pub struct SamplesSampler {
     s0: f64,
     ds: f64,
 }
 
-impl Batch<SamplesSource> for SamplesBatch {
+impl Sampler<SamplesSource> for SamplesSampler {
     type Frame = Sample;
     #[inline]
     fn get(&self, source: &SamplesSource, t: f32) -> Sample {

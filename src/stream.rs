@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, UnsafeCell};
 
-use crate::{spsc, Action, Batch, Sample, Source};
+use crate::{spsc, Action, Sample, Sampler, Source};
 
 /// Construct an unbounded stream of dynamic audio
 ///
@@ -66,7 +66,7 @@ impl Receiver {
 }
 
 impl Source for Receiver {
-    type Batch = StreamBatch;
+    type Sampler = StreamSampler;
 
     #[inline]
     fn update(&self) -> Action {
@@ -77,8 +77,8 @@ impl Source for Receiver {
     }
 
     #[inline]
-    fn sample(&self, t: f32, dt: f32) -> StreamBatch {
-        StreamBatch {
+    fn sample(&self, t: f32, dt: f32) -> StreamSampler {
+        StreamSampler {
             s0: self.t.get() + t * self.rate as f32,
             ds: dt * self.rate as f32,
         }
@@ -99,13 +99,13 @@ impl Source for Receiver {
     }
 }
 
-/// Batch of samples received from a stream
-pub struct StreamBatch {
+/// Sampler for [`stream`]s
+pub struct StreamSampler {
     s0: f32,
     ds: f32,
 }
 
-impl Batch<Receiver> for StreamBatch {
+impl Sampler<Receiver> for StreamSampler {
     type Frame = Sample;
 
     fn get(&self, source: &Receiver, t: f32) -> Sample {
