@@ -7,10 +7,10 @@ use crate::Sample;
 /// loops.
 ///
 /// Note that all methods take `&self`, even when side-effects might be expected. Implementers are
-/// expected to rely on interior mutability. This allows `Source`s to be accessed from multiple
-/// threads, permitting e.g. the use of atomics for live controls.
+/// expected to rely on interior mutability. This allows `Source`s to be accessed while playing via
+/// [`Handle`](crate::Handle), permitting real-time control with e.g. atomics.
 pub trait Source {
-    /// Helper returned by `sample` to expose a range of frames
+    /// Helper returned by `sample` to expose a region of data for sampling
     type Sampler: Sampler<Self>;
 
     /// Construct a sampler covering `dt` seconds
@@ -23,7 +23,8 @@ pub trait Source {
     /// Advance time by `dt` seconds
     ///
     /// Future calls to `sample` will behave as if `dt` were added to the argument, potentially with
-    /// extra precision.
+    /// extra precision. Typically invoked after a batch of samples have been taken, with the same
+    /// `dt` that was passed to `sample`.
     // TODO: Fold this into `Sampler::drop` once GATs exist so `Sampler` can borrow `self`
     fn advance(&self, dt: f32);
 
@@ -48,9 +49,7 @@ pub trait Source {
     }
 }
 
-/// Pseudo-iterator over a sequence of frames
-///
-/// A dedicated trait allows us to work around the absence of GATs.
+/// Accessor for obtaining samples from a [`Source`]
 pub trait Sampler<T: ?Sized> {
     /// Type of frames yielded by `get`, e.g. `[Sample; 2]` for stereo.
     type Frame;
@@ -85,7 +84,7 @@ where
     }
 }
 
-/// Sampler of stereo samples produced from a mono signal
+/// Sampler for [`MonoToStereo`]
 pub struct MonoToStereoSampler<T>(pub T);
 
 impl<T> Sampler<MonoToStereo<T>> for MonoToStereoSampler<T::Sampler>

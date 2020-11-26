@@ -41,7 +41,7 @@ const INITIAL_CHANNEL_CAPACITY: usize = 3;
 #[cfg(miri)]
 const INITIAL_SOURCES_CAPACITY: usize = 4;
 
-/// Handle for controlling a `Worker` from another thread
+/// Handle for controlling a [`Worker`] from another thread
 pub struct Remote {
     sender: spsc::Sender<Msg>,
     sources: Arc<SourceTable>,
@@ -54,7 +54,8 @@ pub struct Remote {
 impl Remote {
     /// Begin playing `source`, returning an ID that can be used to manipulate its playback
     ///
-    /// Sources are automatically dropped after finishing.
+    /// Finished sources are automatically stopped, and their storage reused for future `play`
+    /// calls.
     pub fn play<S>(&mut self, source: S) -> Handle<S>
     where
         S: Source + Send + 'static,
@@ -157,7 +158,7 @@ impl<T> Handle<T> {
     /// Access the source
     ///
     /// Because sources have interior mutability and are hence usually `!Sync`, this must be used to
-    /// construct safe interfaces when access to shared state is requird.
+    /// construct safe interfaces when access to shared state is required.
     pub fn get(&self) -> *mut T {
         self.inner.source.get()
     }

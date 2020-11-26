@@ -1,4 +1,28 @@
-//! Lightweight 3D audio
+//! Lightweight game audio
+//!
+//! ```no_run
+//! let (mut remote, mut worker) = oddio::worker();
+//!
+//! // In audio callback:
+//! # let data = &mut [][..];
+//! # let output_sample_rate = 44100;
+//! let samples = oddio::frame_stereo(data);
+//! for s in &mut samples[..] {
+//!    *s = [0.0, 0.0];
+//! }
+//! worker.render(output_sample_rate, samples);
+//!
+//! // In game logic:
+//! # let samples = [];
+//! # let sample_rate = 44100;
+//! # let position = [0.0, 0.0, 0.0].into();
+//! # let velocity = [0.0, 0.0, 0.0].into();
+//! let samples = oddio::SamplesSource::from(oddio::Samples::from_slice(sample_rate, &samples));
+//! let mut handle = remote.play(oddio::Spatial::new(samples, position, velocity));
+//!
+//! // When position/velocity changes:
+//! handle.set_motion(position, velocity);
+//! ```
 
 #![warn(missing_docs)]
 
