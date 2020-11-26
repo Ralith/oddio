@@ -12,14 +12,14 @@ use crate::{Sample, Sampler, Source};
 /// A sequence of audio samples at a particular rate
 #[derive(Debug)]
 pub struct Samples {
-    rate: u32,
+    rate: f64,
     samples: [Sample],
 }
 
 impl Samples {
     /// Construct samples from existing memory
     pub fn from_slice(rate: u32, samples: &[Sample]) -> Arc<Self> {
-        let header_layout = alloc::Layout::new::<u32>();
+        let header_layout = alloc::Layout::new::<f64>();
         let (layout, payload_offset) = header_layout
             .extend(
                 alloc::Layout::from_size_align(
@@ -31,7 +31,7 @@ impl Samples {
             .unwrap();
         unsafe {
             let mem = alloc::alloc(layout);
-            mem.cast::<u32>().write(rate);
+            mem.cast::<f64>().write(rate.into());
             let payload = mem.add(payload_offset).cast::<Sample>();
             for (i, &x) in samples.iter().enumerate() {
                 payload.add(i).write(x);
@@ -48,7 +48,7 @@ impl Samples {
     {
         let iter = iter.into_iter();
         let len = iter.len();
-        let header_layout = alloc::Layout::new::<u32>();
+        let header_layout = alloc::Layout::new::<f64>();
         let (layout, payload_offset) = header_layout
             .extend(
                 alloc::Layout::from_size_align(
@@ -60,7 +60,7 @@ impl Samples {
             .unwrap();
         unsafe {
             let mem = alloc::alloc(layout);
-            mem.cast::<u32>().write(rate);
+            mem.cast::<f64>().write(rate.into());
             let payload = mem.add(payload_offset).cast::<Sample>();
             for (i, x) in iter.enumerate() {
                 payload.add(i).write(x);
@@ -71,7 +71,7 @@ impl Samples {
 
     /// Number of samples per second
     pub fn rate(&self) -> u32 {
-        self.rate
+        self.rate as u32
     }
 
     #[inline]
@@ -135,8 +135,8 @@ impl Source for SamplesSource {
     #[inline]
     fn sample(&self, dt: f32) -> SamplesSampler {
         SamplesSampler {
-            s0: self.t.get() * f64::from(self.data.rate),
-            ds: f64::from(dt) * f64::from(self.data.rate),
+            s0: self.t.get() * self.data.rate,
+            ds: f64::from(dt) * self.data.rate,
         }
     }
 
@@ -147,7 +147,7 @@ impl Source for SamplesSource {
 
     #[inline]
     fn remaining(&self) -> f32 {
-        (self.data.samples.len() as f64 - self.t.get() * f64::from(self.data.rate)) as f32
+        (self.data.samples.len() as f64 - self.t.get() * self.data.rate) as f32
     }
 }
 
