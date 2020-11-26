@@ -15,13 +15,16 @@ pub trait Source {
 
     /// Construct a sampler around `t` relative to the internal cursor, covering `dt` seconds
     ///
-    /// For best precision, `dt` should be small.
+    /// `dt` represents the size of the period that will be sampled, but does *not* imply sampling
+    /// specifically the period [t, t+dt). However, the sampled period should be near `t` for best
+    /// precision. Large values of `dt` may also compromise precision.
     fn sample(&self, t: f32, dt: f32) -> Self::Sampler;
 
-    /// Advance time by `dt` seconds, which may be negative
+    /// Advance time by `dt` seconds
     ///
     /// Future calls to `sample` will behave as if `dt` were added to the argument, potentially with
-    /// extra precision
+    /// extra precision.
+    // TODO: Fold this into `Sampler::drop` once GATs exist so `Sampler` can borrow `self`
     fn advance(&self, dt: f32);
 
     /// Seconds until data runs out
@@ -54,8 +57,9 @@ pub trait Sampler<T: ?Sized> {
 
     /// Fetch a frame in the neighborhood of the batch
     ///
-    /// `t = 0` represents the start of the batch, and `t = 1` the end, but values out of that range
-    /// are permitted.
+    /// `t` is a proportion, not seconds. `t = 0` corresponds to the time passed to
+    /// [`Source::sample()`], and `t = 1` to that time plus `dt`. Points sampled may not fall within
+    /// that range, but should not cover a total range wider than 1.
     fn get(&self, source: &T, t: f32) -> Self::Frame;
 }
 
