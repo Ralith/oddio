@@ -155,6 +155,11 @@ impl<T> Handle<T> {
         self.inner.stop.store(true, Ordering::Relaxed);
     }
 
+    /// Whether the source is no longer being played
+    pub fn is_stopped(&self) -> bool {
+        self.inner.stop.load(Ordering::Relaxed)
+    }
+
     /// Access the source
     ///
     /// Because sources have interior mutability and are hence usually `!Sync`, this must be used to
@@ -201,6 +206,7 @@ impl Worker {
                 if source.stop.load(Ordering::Relaxed)
                     || (*source.source.get()).mix(sample_duration, samples)
                 {
+                    source.stop.store(true, Ordering::Relaxed);
                     self.sources.drop_source(
                         current,
                         &mut self.last_free,
