@@ -13,9 +13,6 @@ pub trait Source {
     /// Helper returned by `sample` to expose a range of frames
     type Sampler: Sampler<Self>;
 
-    /// Update internal state from controls, if any
-    fn update(&self) -> Action;
-
     /// Construct a sampler around `t` relative to the internal cursor, covering `dt` seconds
     ///
     /// For best precision, `dt` should be small.
@@ -26,6 +23,13 @@ pub trait Source {
     /// Future calls to `sample` will behave as if `dt` were added to the argument, potentially with
     /// extra precision
     fn advance(&self, dt: f32);
+
+    /// Seconds until data runs out
+    ///
+    /// May be infinite for unbounded sources, or negative after advancing past the end. May change
+    /// independently of calls to `advance` for sources with dynamic underlying data such as
+    /// real-time streams.
+    fn remaining(&self) -> f32;
 
     //
     // Helpers
@@ -55,21 +59,6 @@ pub trait Sampler<T: ?Sized> {
     fn get(&self, source: &T, t: f32) -> Self::Frame;
 }
 
-/// Action for the worker thread to take after invoking `Source::update`
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Action {
-    /// Continue playing the source
-    Retain,
-    /// Stop the source and allow its resources to be reused
-    Drop,
-}
-
-impl Default for Action {
-    fn default() -> Self {
-        Action::Retain
-    }
-}
-
 /// Adapt a mono source to output stereo by duplicating its output
 pub struct MonoToStereo<T>(pub T);
 
@@ -79,16 +68,16 @@ where
 {
     type Sampler = MonoToStereoSampler<T::Sampler>;
 
-    fn update(&self) -> Action {
-        self.0.update()
-    }
-
     fn sample(&self, t: f32, dt: f32) -> MonoToStereoSampler<T::Sampler> {
         MonoToStereoSampler(self.0.sample(t, dt))
     }
 
     fn advance(&self, dt: f32) {
         self.0.advance(dt);
+    }
+
+    fn remaining(&self) -> f32 {
+        self.0.remaining()
     }
 }
 
@@ -109,17 +98,17 @@ where
 
 /// Type-erased source suitable for stereo mixing
 pub(crate) trait Mix {
-    unsafe fn mix(&self, sample_duration: f32, out: &mut [[Sample; 2]]) -> Action;
+    /// Returns whether the source should be dropped
+    unsafe fn mix(&self, sample_duration: f32, out: &mut [[Sample; 2]]) -> bool;
 }
 
 impl<T: Source> Mix for T
 where
     T::Sampler: Sampler<T, Frame = [Sample; 2]>,
 {
-    unsafe fn mix(&self, sample_duration: f32, out: &mut [[Sample; 2]]) -> Action {
-        let act = self.update();
-        if matches!(act, Action::Drop) {
-            return act;
+    unsafe fn mix(&self, sample_duration: f32, out: &mut [[Sample; 2]]) -> bool {
+        if self.remaining() < 0.0 {
+            return true;
         }
         let dt = sample_duration * out.len() as f32;
         let step = 1.0 / out.len() as f32;
@@ -131,6 +120,6 @@ where
             x[1] += frame[1];
         }
         self.advance(dt);
-        act
+        false
     }
 }

@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Action, Sample, Sampler, Source};
+use crate::{Sample, Sampler, Source};
 
 /// A sequence of audio samples at a particular rate
 #[derive(Debug)]
@@ -133,11 +133,6 @@ impl Source for SamplesSource {
     type Sampler = SamplesSampler;
 
     #[inline]
-    fn update(&self) -> Action {
-        Action::Retain
-    }
-
-    #[inline]
     fn sample(&self, t: f32, dt: f32) -> SamplesSampler {
         SamplesSampler {
             s0: (self.t.get() + f64::from(t)) * f64::from(self.data.rate),
@@ -148,6 +143,11 @@ impl Source for SamplesSource {
     #[inline]
     fn advance(&self, dt: f32) {
         self.t.set(self.t.get() + f64::from(dt));
+    }
+
+    #[inline]
+    fn remaining(&self) -> f32 {
+        (self.data.samples.len() as f64 - self.t.get() * f64::from(self.data.rate)) as f32
     }
 }
 

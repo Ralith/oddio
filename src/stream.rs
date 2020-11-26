@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, UnsafeCell};
 
-use crate::{spsc, Action, Sample, Sampler, Source};
+use crate::{spsc, Sample, Sampler, Source};
 
 /// Construct an unbounded stream of dynamic audio
 ///
@@ -25,6 +25,7 @@ pub fn stream(rate: u32, past_size: usize, future_size: usize) -> (Sender, Recei
             past_size,
             inner: UnsafeCell::new(recv),
             t: Cell::new(0.0),
+            closed_for: Cell::new(None),
         },
     )
 }
@@ -46,8 +47,10 @@ pub struct Receiver {
     rate: u32,
     past_size: usize,
     inner: UnsafeCell<spsc::Receiver<Sample>>,
-    /// Offset of current data from the start of the buffer, in samples
+    /// Offset of t=0 from the start of the buffer, in samples
     t: Cell<f32>,
+    /// Seconds since the stream ended
+    closed_for: Cell<Option<f32>>,
 }
 
 impl Receiver {
@@ -69,19 +72,10 @@ impl Source for Receiver {
     type Sampler = StreamSampler;
 
     #[inline]
-    fn update(&self) -> Action {
-        unsafe {
-            let inner = &mut *self.inner.get();
-            if inner.is_closed() {
-                return Action::Drop;
-            }
-            inner.update();
-        }
-        Action::Retain
-    }
-
-    #[inline]
     fn sample(&self, t: f32, dt: f32) -> StreamSampler {
+        unsafe {
+            (*self.inner.get()).update();
+        }
         StreamSampler {
             s0: self.t.get() + t * self.rate as f32,
             ds: dt * self.rate as f32,
@@ -90,8 +84,12 @@ impl Source for Receiver {
 
     #[inline]
     fn advance(&self, dt: f32) {
-        // TODO: Clamp such that a configurable amount of data remains at t >= 0, to allow repeating
-        // audio rather than gaps
+        let is_closed = unsafe { (*self.inner.get()).is_closed() };
+        if is_closed {
+            self.closed_for
+                .set(Some(self.closed_for.get().unwrap_or(0.0) + dt));
+            return;
+        }
         let inner = unsafe { &mut *self.inner.get() };
         self.t
             .set((self.t.get() + dt * self.rate as f32).min((inner.len() + self.past_size) as f32));
@@ -100,6 +98,11 @@ impl Source for Receiver {
             inner.release(excess as usize);
             self.t.set(self.t.get() - excess);
         }
+    }
+
+    #[inline]
+    fn remaining(&self) -> f32 {
+        self.closed_for.get().map_or(f32::INFINITY, |x| -x)
     }
 }
 
@@ -145,7 +148,7 @@ mod tests {
         let (mut send, recv) = stream(1, 4, 4);
         assert_eq!(send.write(&[1.0, 2.0, 3.0]), 3);
         assert_eq!(send.write(&[4.0, 5.0]), 2);
-        recv.update();
+        recv.sample(0.0, 0.0); // Trigger update
         assert_seq(&recv, -1.0, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
 
         recv.advance(1.0);
@@ -157,7 +160,7 @@ mod tests {
 
         // Only 4 slots available to the writer
         assert_eq!(send.write(&[6.0, 7.0, 8.0, 9.0, 10.0]), 4);
-        recv.update();
+        recv.sample(0.0, 0.0); // Trigger update
         assert_seq(&recv, -1.0, &[5.0, 6.0, 7.0, 8.0, 9.0, 0.0]);
     }
 }

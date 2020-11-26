@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use crate::{spsc, Action, Mix, Sample, Sampler, Source};
+use crate::{spsc, Mix, Sample, Sampler, Source};
 
 /// Build a remote/worker pair
 pub fn worker() -> (Remote, Worker) {
@@ -53,6 +53,8 @@ pub struct Remote {
 
 impl Remote {
     /// Begin playing `source`, returning an ID that can be used to manipulate its playback
+    ///
+    /// Sources are automatically dropped after finishing.
     pub fn play<S>(&mut self, source: S) -> Handle<S>
     where
         S: Source + Send + 'static,
@@ -195,23 +197,14 @@ impl Worker {
             i = slot.next.load(Ordering::Relaxed); // Read next before we might clobber it in drop_source
             unsafe {
                 let source = (*slot.source.get()).as_mut().unwrap();
-                if source.stop.load(Ordering::Relaxed) {
+                if source.stop.load(Ordering::Relaxed)
+                    || (*source.source.get()).mix(sample_duration, samples)
+                {
                     self.sources.drop_source(
                         current,
                         &mut self.last_free,
                         &mut self.first_populated,
                     );
-                } else {
-                    match (*source.source.get()).mix(sample_duration, samples) {
-                        Action::Retain => {}
-                        Action::Drop => {
-                            self.sources.drop_source(
-                                current,
-                                &mut self.last_free,
-                                &mut self.first_populated,
-                            );
-                        }
-                    }
                 }
             }
         }

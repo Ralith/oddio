@@ -4,7 +4,7 @@ use std::ops::{Index, IndexMut};
 use crate::{
     math::{add, dot, mix, norm, scale, sub},
     swap::Swap,
-    Action, Handle, Sample, Sampler, Source,
+    Handle, Sample, Sampler, Source,
 };
 
 /// Places a mono source at an adjustable position and velocity wrt. the listener
@@ -41,8 +41,9 @@ where
 {
     type Sampler = SpatialSampler<T::Sampler>;
 
-    fn update(&self) -> Action {
+    fn sample(&self, t: f32, world_dt: f32) -> SpatialSampler<T::Sampler> {
         unsafe {
+            // Update motion
             let orig_next = *self.motion.received();
             if self.motion.refresh() {
                 let state = &mut *self.state.get();
@@ -51,12 +52,8 @@ where
             } else {
                 debug_assert_eq!(orig_next.position, (*self.motion.received()).position);
             }
-        }
-        self.inner.update()
-    }
 
-    fn sample(&self, t: f32, world_dt: f32) -> SpatialSampler<T::Sampler> {
-        unsafe {
+            // Compute sampling parameters
             let state = &mut *self.state.get();
             state.dt += world_dt;
             let next_position = state.smoothed_position(&*self.motion.received());
@@ -85,6 +82,15 @@ where
 
     fn advance(&self, dt: f32) {
         self.inner.advance(dt);
+    }
+
+    fn remaining(&self) -> f32 {
+        let position = unsafe {
+            let state = &mut *self.state.get();
+            state.smoothed_position(&*self.motion.received())
+        };
+        let distance = norm(position.into());
+        self.inner.remaining() + distance / SPEED_OF_SOUND
     }
 }
 
