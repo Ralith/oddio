@@ -71,7 +71,11 @@ impl Source for Receiver {
     #[inline]
     fn update(&self) -> Action {
         unsafe {
-            (*self.inner.get()).update();
+            let inner = &mut *self.inner.get();
+            if inner.is_closed() {
+                return Action::Drop;
+            }
+            inner.update();
         }
         Action::Retain
     }
