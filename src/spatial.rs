@@ -41,7 +41,7 @@ where
 {
     type Sampler = SpatialSampler<T::Sampler>;
 
-    fn sample(&self, t: f32, world_dt: f32) -> SpatialSampler<T::Sampler> {
+    fn sample(&self, world_dt: f32) -> SpatialSampler<T::Sampler> {
         unsafe {
             // Update motion
             let orig_next = *self.motion.received();
@@ -71,7 +71,7 @@ where
                 state.ears[ear] = next_state;
             }
             SpatialSampler {
-                inner: self.inner.sample(t, world_dt),
+                inner: self.inner.sample(world_dt),
                 t0,
                 dt,
                 initial_attenuation,

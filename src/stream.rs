@@ -72,12 +72,12 @@ impl Source for Receiver {
     type Sampler = StreamSampler;
 
     #[inline]
-    fn sample(&self, t: f32, dt: f32) -> StreamSampler {
+    fn sample(&self, dt: f32) -> StreamSampler {
         unsafe {
             (*self.inner.get()).update();
         }
         StreamSampler {
-            s0: self.t.get() + t * self.rate as f32,
+            s0: self.t.get(),
             ds: dt * self.rate as f32,
         }
     }
@@ -130,7 +130,7 @@ mod tests {
 
     fn assert_seq(recv: &Receiver, start: f32, seq: &[f32]) {
         for (i, &expected) in seq.iter().enumerate() {
-            let actual = recv.sample(start + i as f32, 1.0).get(&recv, 0.0);
+            let actual = recv.sample(1.0).get(&recv, start + i as f32);
             if expected != actual {
                 panic!(
                     "expected {:?} from {}, got {:?} from {}",
@@ -148,7 +148,7 @@ mod tests {
         let (mut send, recv) = stream(1, 4, 4);
         assert_eq!(send.write(&[1.0, 2.0, 3.0]), 3);
         assert_eq!(send.write(&[4.0, 5.0]), 2);
-        recv.sample(0.0, 0.0); // Trigger update
+        recv.sample(0.0); // Trigger update
         assert_seq(&recv, -1.0, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
 
         recv.advance(1.0);
@@ -160,7 +160,7 @@ mod tests {
 
         // Only 4 slots available to the writer
         assert_eq!(send.write(&[6.0, 7.0, 8.0, 9.0, 10.0]), 4);
-        recv.sample(0.0, 0.0); // Trigger update
+        recv.sample(0.0); // Trigger update
         assert_seq(&recv, -1.0, &[5.0, 6.0, 7.0, 8.0, 9.0, 0.0]);
     }
 }

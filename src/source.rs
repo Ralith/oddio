@@ -13,12 +13,12 @@ pub trait Source {
     /// Helper returned by `sample` to expose a range of frames
     type Sampler: Sampler<Self>;
 
-    /// Construct a sampler around `t` relative to the internal cursor, covering `dt` seconds
+    /// Construct a sampler covering `dt` seconds
     ///
     /// `dt` represents the size of the period that will be sampled, but does *not* imply sampling
-    /// specifically the period [t, t+dt). However, the sampled period should be near `t` for best
+    /// specifically the period [0, dt). However, the sampled period should be near 0 for best
     /// precision. Large values of `dt` may also compromise precision.
-    fn sample(&self, t: f32, dt: f32) -> Self::Sampler;
+    fn sample(&self, dt: f32) -> Self::Sampler;
 
     /// Advance time by `dt` seconds
     ///
@@ -57,9 +57,9 @@ pub trait Sampler<T: ?Sized> {
 
     /// Fetch a frame in the neighborhood of the batch
     ///
-    /// `t` is a proportion, not seconds. `t = 0` corresponds to the time passed to
-    /// [`Source::sample()`], and `t = 1` to that time plus `dt`. Points sampled may not fall within
-    /// that range, but should not cover a total range wider than 1.
+    /// `t` is a proportion, not seconds. `t = 0` corresponds to the source's internal cursor, and
+    /// `t = 1` to that time plus `dt`. Points sampled may fall outside that range, but should not
+    /// cover a total range wider than 1.
     fn get(&self, source: &T, t: f32) -> Self::Frame;
 }
 
@@ -72,8 +72,8 @@ where
 {
     type Sampler = MonoToStereoSampler<T::Sampler>;
 
-    fn sample(&self, t: f32, dt: f32) -> MonoToStereoSampler<T::Sampler> {
-        MonoToStereoSampler(self.0.sample(t, dt))
+    fn sample(&self, dt: f32) -> MonoToStereoSampler<T::Sampler> {
+        MonoToStereoSampler(self.0.sample(dt))
     }
 
     fn advance(&self, dt: f32) {
@@ -116,7 +116,7 @@ where
         }
         let dt = sample_duration * out.len() as f32;
         let step = 1.0 / out.len() as f32;
-        let batch = self.sample(0.0, dt);
+        let batch = self.sample(dt);
         for (i, x) in out.iter_mut().enumerate() {
             let t = i as f32 * step;
             let frame = batch.get(self, t);

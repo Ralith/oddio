@@ -133,9 +133,9 @@ impl Source for SamplesSource {
     type Sampler = SamplesSampler;
 
     #[inline]
-    fn sample(&self, t: f32, dt: f32) -> SamplesSampler {
+    fn sample(&self, dt: f32) -> SamplesSampler {
         SamplesSampler {
-            s0: (self.t.get() + f64::from(t)) * f64::from(self.data.rate),
+            s0: self.t.get() * f64::from(self.data.rate),
             ds: f64::from(dt) * f64::from(self.data.rate),
         }
     }
