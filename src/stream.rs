@@ -120,7 +120,9 @@ impl Sampler<Receiver> for StreamSampler {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
-        source.get(x0) * (1.0 - fract) + source.get(x1) * fract
+        let a = source.get(x0);
+        let b = source.get(x1);
+        a + fract * (b - a)
     }
 }
 

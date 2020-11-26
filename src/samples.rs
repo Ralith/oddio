@@ -79,7 +79,9 @@ impl Samples {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
-        self.get(x0) * (1.0 - fract) + self.get(x1) * fract
+        let a = self.get(x0);
+        let b = self.get(x1);
+        a + fract * (b - a)
     }
 
     #[inline]
