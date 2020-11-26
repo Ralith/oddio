@@ -10,6 +10,9 @@ use std::{
 use crate::{Sample, Sampler, Source};
 
 /// A sequence of audio samples at a particular rate
+///
+/// Dynamically sized type. Typically stored inside an `Arc`, allowing efficient simultaneous reuse
+/// by multiple sources.
 #[derive(Debug)]
 pub struct Samples {
     rate: f64,
