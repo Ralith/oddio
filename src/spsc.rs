@@ -130,6 +130,12 @@ impl<T> Receiver<T> {
     pub fn drain(&mut self) -> Drain<'_, T> {
         Drain { recv: self }
     }
+
+    /// Whether the sender has been dropped
+    // Could be `&self` since we don't allow new references to be created, but :effort:
+    pub fn is_closed(&mut self) -> bool {
+        Arc::get_mut(&mut self.shared).is_some()
+    }
 }
 
 impl<T> Index<usize> for Receiver<T> {
