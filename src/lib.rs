@@ -6,11 +6,11 @@
 //! // In audio callback:
 //! # let data = &mut [][..];
 //! # let output_sample_rate = 44100;
-//! let samples = oddio::frame_stereo(data);
-//! for s in &mut samples[..] {
+//! let out_frames = oddio::frame_stereo(data);
+//! for s in &mut out_frames[..] {
 //!    *s = [0.0, 0.0];
 //! }
-//! worker.render(output_sample_rate, samples);
+//! worker.render(output_sample_rate, out_frames);
 //!
 //! // In game logic:
 //! # let samples = [];
