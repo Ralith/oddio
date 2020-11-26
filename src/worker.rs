@@ -79,7 +79,7 @@ impl Remote {
                     .unwrap_or_else(|_| unreachable!("newly allocated nonzero-capacity buffer"))
             }
         };
-        self.send(Msg::Play(id.index));
+        self.send(Msg::Play(id));
         Handle { inner: source }
     }
 
@@ -99,10 +99,7 @@ impl Remote {
     }
 
     /// Allocate a slot for a new source
-    fn alloc(
-        &mut self,
-        source: Arc<SourceData<dyn Mix>>,
-    ) -> Result<SourceId, Arc<SourceData<dyn Mix>>> {
+    fn alloc(&mut self, source: Arc<SourceData<dyn Mix>>) -> Result<u32, Arc<SourceData<dyn Mix>>> {
         if self.first_free == usize::MAX {
             return Err(source);
         }
@@ -112,9 +109,7 @@ impl Remote {
         self.first_free = slot.next.load(Ordering::Acquire);
         unsafe {
             (*slot.source.get()) = Some(source);
-            Ok(SourceId {
-                index: index as u32,
-            })
+            Ok(index as u32)
         }
     }
 
@@ -167,12 +162,6 @@ impl<T> Handle<T> {
     pub fn get(&self) -> *mut T {
         self.inner.source.get()
     }
-}
-
-/// Lightweight handle for a source actively being played on a worker
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct SourceId {
-    index: u32,
 }
 
 /// Writes output audio samples on demand
