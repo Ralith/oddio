@@ -10,10 +10,10 @@ use crate::{
 /// Places a mono source at an adjustable position and velocity wrt. the listener
 ///
 /// The listener faces directly along the -Z axis, with +X to the right.
-pub struct Spatial<T> {
-    inner: T,
+pub struct Spatial<T: ?Sized> {
     motion: Swap<Motion>,
     state: UnsafeCell<State>,
+    inner: T,
 }
 
 impl<T> Spatial<T> {
