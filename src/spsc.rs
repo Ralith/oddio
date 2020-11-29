@@ -97,6 +97,14 @@ impl<T> Sender<T> {
     pub fn is_closed(&mut self) -> bool {
         Arc::get_mut(&mut self.shared).is_some()
     }
+
+    /// Whether a send is likely (but not guaranteed) to fail
+    pub fn is_full(&self) -> bool {
+        let write = self.shared.header.write.load(Ordering::Relaxed);
+        let read = self.shared.header.read.load(Ordering::Relaxed);
+        let size = self.shared.data.len();
+        (write + 1) % size == read
+    }
 }
 
 pub struct Receiver<T> {
@@ -135,6 +143,20 @@ impl<T> Receiver<T> {
     // Could be `&self` since we don't allow new references to be created, but :effort:
     pub fn is_closed(&mut self) -> bool {
         Arc::get_mut(&mut self.shared).is_some()
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return None;
+        }
+        let read = self.shared.header.read.load(Ordering::Relaxed);
+        let value = unsafe { (*self.shared.data[read].get()).as_ptr().read() };
+        self.shared
+            .header
+            .read
+            .store((read + 1) % self.shared.data.len(), Ordering::Relaxed);
+        self.len -= 1;
+        Some(value)
     }
 }
 
@@ -228,18 +250,7 @@ pub struct Drain<'a, T> {
 impl<'a, T> Iterator for Drain<'a, T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
-        if self.recv.len == 0 {
-            return None;
-        }
-        let read = self.recv.shared.header.read.load(Ordering::Relaxed);
-        let value = unsafe { (*self.recv.shared.data[read].get()).as_ptr().read() };
-        self.recv
-            .shared
-            .header
-            .read
-            .store((read + 1) % self.recv.shared.data.len(), Ordering::Relaxed);
-        self.recv.len -= 1;
-        Some(value)
+        self.recv.pop()
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
