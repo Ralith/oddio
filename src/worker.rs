@@ -105,9 +105,12 @@ impl Remote {
         loop {
             self.gc_inner();
             if !self.free.is_closed() || self.sender.is_closed() {
+                // If the free queue isn't closed, it may get more data in the future. If the
+                // message queue is closed, then the worker's gone and none of this
+                // matters. Otherwise, we must be switching to a new free queue.
                 break;
             }
-            // Run the inner loop again to guard against data added between the first run and the
+            // Drain the queue again to guard against data added between the first run and the
             // channel becoming closed
             self.gc_inner();
             self.free = self
