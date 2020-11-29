@@ -99,7 +99,7 @@ impl Remote {
     }
 
     /// Allocate a slot for a new source
-    fn alloc(&mut self, source: Arc<SourceData<dyn Mix>>) -> Result<u32, Arc<SourceData<dyn Mix>>> {
+    fn alloc(&mut self, source: ErasedSource) -> Result<u32, ErasedSource> {
         if self.first_free == usize::MAX {
             return Err(source);
         }
@@ -380,7 +380,7 @@ impl SourceTable {
 struct Slot {
     /// When on the freelist, may be written by `Remote`. When populated, may be read by
     /// `Worker`. Other access is unsound!
-    source: UnsafeCell<Option<Arc<SourceData<dyn Mix>>>>,
+    source: UnsafeCell<Option<ErasedSource>>,
     /// Accessed by `worker` only.
     prev: UnsafeCell<usize>,
     /// When on the freelist, may be read by `Remote`. Written by `Worker` when moving between
@@ -389,6 +389,9 @@ struct Slot {
     /// it again.
     next: AtomicUsize,
 }
+
+/// Type-erased internal reference to a source
+type ErasedSource = Arc<SourceData<dyn Mix>>;
 
 enum Msg {
     ReallocChannel(spsc::Receiver<Msg>),
