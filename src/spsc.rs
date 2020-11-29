@@ -97,14 +97,6 @@ impl<T> Sender<T> {
     pub fn is_closed(&mut self) -> bool {
         Arc::get_mut(&mut self.shared).is_some()
     }
-
-    /// Whether a send is likely (but not guaranteed) to fail
-    pub fn is_full(&self) -> bool {
-        let write = self.shared.header.write.load(Ordering::Relaxed);
-        let read = self.shared.header.read.load(Ordering::Relaxed);
-        let size = self.shared.data.len();
-        (write + 1) % size == read
-    }
 }
 
 pub struct Receiver<T> {

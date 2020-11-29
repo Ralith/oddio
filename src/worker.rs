@@ -18,6 +18,7 @@ pub fn worker() -> (Remote, Worker) {
         sender: msg_send,
         free: free_recv,
         next_free: VecDeque::new(),
+        old_senders: VecDeque::new(),
         source_capacity: INITIAL_SOURCES_CAPACITY,
         active_sources: 0,
     };
@@ -45,6 +46,7 @@ pub struct Remote {
     sender: spsc::Sender<Msg>,
     free: spsc::Receiver<Free>,
     next_free: VecDeque<spsc::Receiver<Free>>,
+    old_senders: VecDeque<spsc::Sender<Msg>>,
     source_capacity: usize,
     active_sources: usize,
 }
@@ -67,7 +69,7 @@ impl Remote {
         if self.active_sources == self.source_capacity {
             self.source_capacity *= 2;
             let sources = SourceTable::with_capacity(self.source_capacity);
-            let (free_send, free_recv) = spsc::channel(self.source_capacity);
+            let (free_send, free_recv) = spsc::channel(self.source_capacity + 1); // save a slot for table free msg
             self.send(Msg::ReallocSources(sources, free_send));
             self.next_free.push_back(free_recv);
         }
@@ -86,12 +88,20 @@ impl Remote {
                 .unwrap_or_else(|_| unreachable!("a space was reserved for this message"));
             send.send(msg, 0)
                 .unwrap_or_else(|_| unreachable!("newly allocated nonzero-capacity queue"));
-            self.sender = send;
+            let old = mem::replace(&mut self.sender, send);
+            self.old_senders.push_back(old);
         }
     }
 
     // Free old resources
     fn gc(&mut self) {
+        while self
+            .old_senders
+            .front_mut()
+            .map_or(false, |x| x.is_closed())
+        {
+            self.old_senders.pop_front();
+        }
         loop {
             self.gc_inner();
             if !self.free.is_closed() || self.sender.is_closed() {
@@ -108,9 +118,15 @@ impl Remote {
     }
 
     fn gc_inner(&mut self) {
+        self.free.update();
         for x in self.free.drain() {
-            if matches!(x, Free::Source(_)) {
-                self.active_sources -= 1;
+            match x {
+                Free::Source(_) => {
+                    self.active_sources -= 1;
+                }
+                Free::Table(x) => {
+                    debug_assert_eq!(x.len(), 0, "sources were transferred to new table");
+                }
             }
         }
     }
@@ -172,29 +188,20 @@ impl Worker {
                 || unsafe { (*source.source.get()).mix(sample_duration, samples) }
             {
                 source.stop.store(true, Ordering::Relaxed);
-                if !self.free.is_full() {
-                    self.free
-                        .send(Free::Source(self.sources.swap_remove(i)), 0)
-                        .unwrap_or_else(|_| unreachable!("checked for capacity in advance"));
-                }
+                self.free
+                    .send(Free::Source(self.sources.swap_remove(i)), 0)
+                    .unwrap_or_else(|_| unreachable!("free queue has capacity for every source"));
             }
         }
     }
 
     fn drain_msgs(&mut self) {
         self.recv.update();
-        while !self.free.is_full() {
+        while let Some(msg) = self.recv.pop() {
             use Msg::*;
-            let msg = match self.recv.pop() {
-                None => break,
-                Some(x) => x,
-            };
             match msg {
                 ReallocChannel(recv) => {
-                    let old = mem::replace(&mut self.recv, recv);
-                    self.free
-                        .send(Free::Channel(old), 0)
-                        .unwrap_or_else(|_| unreachable!("checked for capacity in advance"));
+                    self.recv = recv;
                     self.recv.update();
                 }
                 ReallocSources(sources, free) => {
@@ -236,11 +243,9 @@ struct SourceData<S: ?Sized> {
     source: UnsafeCell<S>,
 }
 
-/// Resources the worker wants to free
 enum Free {
+    Table(Vec<ErasedSource>),
     Source(ErasedSource),
-    Channel(spsc::Receiver<Msg>),
-    Table(SourceTable),
 }
 
 #[cfg(test)]
