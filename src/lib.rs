@@ -10,12 +10,12 @@
 //! oddio::run(&mixer, output_sample_rate, out_frames);
 //!
 //! // In game logic:
-//! # let samples = [];
+//! # let frames = [];
 //! # let sample_rate = 44100;
 //! # let position = [0.0, 0.0, 0.0].into();
 //! # let velocity = [0.0, 0.0, 0.0].into();
-//! let samples = oddio::SamplesSource::from(oddio::Samples::from_slice(sample_rate, &samples));
-//! let mut handle = remote.play(oddio::Spatial::new(samples, position, velocity));
+//! let frames = oddio::FramesSource::from(oddio::Frames::from_slice(sample_rate, &frames));
+//! let mut handle = remote.play(oddio::Spatial::new(frames, position, velocity));
 //!
 //! // When position/velocity changes:
 //! handle.set_motion(position, velocity);
@@ -23,9 +23,10 @@
 
 #![warn(missing_docs)]
 
+mod frame;
+mod frames;
 mod math;
 mod mixer;
-mod samples;
 mod source;
 mod spatial;
 mod spsc;
@@ -33,8 +34,9 @@ mod stream;
 pub mod strided;
 mod swap;
 
+pub use frame::Frame;
+pub use frames::*;
 pub use mixer::*;
-pub use samples::*;
 pub use source::*;
 pub use spatial::Spatial;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
@@ -44,7 +46,7 @@ pub use swap::Swap;
 /// Unitless instantaneous sound wave amplitude measurement
 pub type Sample = f32;
 
-/// Populate `out` with samples from `source` at `sample_rate`
+/// Populate `out` with frames from `source` at `sample_rate`
 ///
 /// Convenience wrapper around the [`Source`] interface.
 pub fn run<S: Source>(source: &S, sample_rate: u32, out: &mut [S::Frame]) {

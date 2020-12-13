@@ -18,8 +18,8 @@ let out_frames = oddio::frame_stereo(data);
 oddio::run(&mixer, output_sample_rate, out_frames);
 
 // In game logic:
-let samples = oddio::SamplesSource::from(oddio::Samples::from_slice(sample_rate, &samples));
-let mut handle = remote.play(oddio::Spatial::new(samples, position, velocity));
+let frames = oddio::FramesSource::from(oddio::Frames::from_slice(sample_rate, &frames));
+let mut handle = remote.play(oddio::Spatial::new(frames, position, velocity));
 
 // When position/velocity changes:
 handle.set_motion(position, velocity);

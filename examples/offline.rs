@@ -6,7 +6,7 @@ const FRAME_SIZE: usize = 512;
 const SPEED: f32 = 50.0;
 
 fn main() {
-    let boop = oddio::Samples::from_iter(
+    let boop = oddio::Frames::from_iter(
         RATE,
         // Generate a simple sine wave
         (0..RATE * DURATION_SECS).map(|i| {
@@ -15,7 +15,7 @@ fn main() {
         }),
     );
     let boop = oddio::Spatial::new(
-        oddio::SamplesSource::from(boop),
+        oddio::FramesSource::from(boop),
         [-SPEED, 10.0, 0.0].into(),
         [SPEED, 0.0, 0.0].into(),
     );
@@ -23,13 +23,13 @@ fn main() {
     let (mut remote, mixer) = oddio::mixer();
     remote.play(boop);
 
-    let mut samples = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
-    for chunk in samples.chunks_mut(FRAME_SIZE) {
+    let mut frames = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
+    for chunk in frames.chunks_mut(FRAME_SIZE) {
         oddio::run(&mixer, RATE, chunk);
     }
 
     let track = wav::BitDepth::Sixteen(
-        samples
+        frames
             .into_iter()
             .flat_map(|ch| (0..2).map(move |i| ch[i]))
             .map(|x| (x * i16::MAX as f32) as i16)

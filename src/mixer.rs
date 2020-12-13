@@ -320,16 +320,16 @@ enum Free {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Samples, SamplesSource};
+    use crate::{Frames, FramesSource};
 
     const RATE: u32 = 10;
 
     #[test]
     fn realloc_sources() {
         let (mut remote, mixer) = mixer();
-        let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
+        let source = FramesSource::from(Frames::from_slice(RATE, &[[0.0; 2]; RATE as usize]));
         for i in 1..=(INITIAL_SOURCES_CAPACITY + 2) {
-            remote.play(source.clone().into_stereo());
+            remote.play(source.clone());
             mixer.sample(0.0, 1.0, StridedMut::default()); // Process messages
             assert_eq!(unsafe { (*mixer.0.get()).sources.len() }, i);
         }
@@ -338,9 +338,9 @@ mod tests {
     #[test]
     fn realloc_channel() {
         let (mut remote, mixer) = mixer();
-        let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
+        let source = FramesSource::from(Frames::from_slice(RATE, &[[0.0; 2]; RATE as usize]));
         for _ in 0..(INITIAL_CHANNEL_CAPACITY + 2) {
-            remote.play(source.clone().into_stereo());
+            remote.play(source.clone());
         }
         assert_eq!(remote.sender.capacity(), 1 + 2 * INITIAL_CHANNEL_CAPACITY);
         assert_eq!(unsafe { (*mixer.0.get()).sources.len() }, 0);
