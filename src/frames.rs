@@ -64,9 +64,12 @@ impl<T: Frame + Copy> Frames<T> {
             let mem = alloc::alloc(layout);
             mem.cast::<f64>().write(rate.into());
             let payload = mem.add(payload_offset).cast::<T>();
+            let mut n = 0;
             for (i, x) in iter.enumerate() {
                 payload.add(i).write(x);
+                n += 1;
             }
+            assert_eq!(n, len, "iterator returned incorrect length");
             Box::from_raw(ptr::slice_from_raw_parts_mut(mem, len) as *mut Self).into()
         }
     }
