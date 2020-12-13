@@ -42,7 +42,7 @@ where
     type Frame = [Sample; 2];
 
     fn sample(&self, offset: f32, world_dt: f32, mut out: StridedMut<'_, [Sample; 2]>) {
-        let state;
+        let prev_position;
         let next_position;
         unsafe {
             // Update motion
@@ -55,9 +55,12 @@ where
                 debug_assert_eq!(orig_next.position, (*self.motion.received()).position);
             }
 
-            state = &mut *self.state.get();
-            next_position =
-                state.smoothed_position(world_dt * out.len() as f32, &*self.motion.received());
+            let state = &*self.state.get();
+            prev_position = state.smoothed_position(offset, &*self.motion.received());
+            next_position = state.smoothed_position(
+                offset + world_dt * out.len() as f32,
+                &*self.motion.received(),
+            );
         }
 
         // Compute sampling parameters
@@ -67,13 +70,13 @@ where
         let mut attenuation_change = [0.0; 2];
         let recip_samples = 1.0 / out.len() as f32;
         for &ear in [Ear::Left, Ear::Right].iter() {
-            t0[ear] = offset + state.ears[ear].offset;
+            let prev_state = EarState::new(prev_position, ear);
+            t0[ear] = prev_state.offset + offset;
             let next_state = EarState::new(next_position, ear);
-            dt[ear] = (next_state.offset - state.ears[ear].offset) * recip_samples + world_dt;
-            initial_attenuation[ear] = state.ears[ear].attenuation;
+            dt[ear] = (next_state.offset - prev_state.offset) * recip_samples + world_dt;
+            initial_attenuation[ear] = prev_state.attenuation;
             attenuation_change[ear] =
-                (next_state.attenuation - state.ears[ear].attenuation) * recip_samples;
-            state.ears[ear] = next_state;
+                (next_state.attenuation - prev_state.attenuation) * recip_samples;
         }
 
         // Sample
@@ -92,7 +95,12 @@ where
 
     fn advance(&self, dt: f32) {
         unsafe {
-            (*self.state.get()).dt += dt;
+            let state = &mut *self.state.get();
+            state.dt += dt;
+            let next_position = state.smoothed_position(0.0, &*self.motion.received());
+            for &ear in [Ear::Left, Ear::Right].iter() {
+                state.ears[ear] = EarState::new(next_position, ear);
+            }
         }
         self.inner.advance(dt);
     }
