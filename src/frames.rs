@@ -7,27 +7,29 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Sample, Source, StridedMut};
+use crate::{Frame, Source, StridedMut};
 
-/// A sequence of audio samples at a particular rate
+/// A sequence of static audio frames at a particular sample rate
 ///
-/// Dynamically sized type. Typically stored inside an `Arc`, allowing efficient simultaneous reuse
-/// by multiple sources.
+/// Used to store e.g. sound effects decoded from files on disk.
+///
+/// Dynamically sized type. Typically stored inside an `Arc`, allowing efficient simultaneous use by
+/// multiple sources.
 #[derive(Debug)]
-pub struct Samples {
+pub struct Frames<T> {
     rate: f64,
-    samples: [Sample],
+    samples: [T],
 }
 
-impl Samples {
+impl<T: Frame + Copy> Frames<T> {
     /// Construct samples from existing memory
-    pub fn from_slice(rate: u32, samples: &[Sample]) -> Arc<Self> {
+    pub fn from_slice(rate: u32, samples: &[T]) -> Arc<Self> {
         let header_layout = alloc::Layout::new::<f64>();
         let (layout, payload_offset) = header_layout
             .extend(
                 alloc::Layout::from_size_align(
-                    mem::size_of::<Sample>() * samples.len(),
-                    mem::align_of::<Sample>(),
+                    mem::size_of::<T>() * samples.len(),
+                    mem::align_of::<T>(),
                 )
                 .unwrap(),
             )
@@ -35,7 +37,7 @@ impl Samples {
         unsafe {
             let mem = alloc::alloc(layout);
             mem.cast::<f64>().write(rate.into());
-            let payload = mem.add(payload_offset).cast::<Sample>();
+            let payload = mem.add(payload_offset).cast::<T>();
             for (i, &x) in samples.iter().enumerate() {
                 payload.add(i).write(x);
             }
@@ -44,27 +46,24 @@ impl Samples {
     }
 
     /// Generate samples from an iterator
-    pub fn from_iter<T>(rate: u32, iter: T) -> Arc<Self>
+    pub fn from_iter<I>(rate: u32, iter: I) -> Arc<Self>
     where
-        T: IntoIterator<Item = Sample>,
-        T::IntoIter: ExactSizeIterator,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: ExactSizeIterator,
     {
         let iter = iter.into_iter();
         let len = iter.len();
         let header_layout = alloc::Layout::new::<f64>();
         let (layout, payload_offset) = header_layout
             .extend(
-                alloc::Layout::from_size_align(
-                    mem::size_of::<Sample>() * len,
-                    mem::align_of::<Sample>(),
-                )
-                .unwrap(),
+                alloc::Layout::from_size_align(mem::size_of::<T>() * len, mem::align_of::<T>())
+                    .unwrap(),
             )
             .unwrap();
         unsafe {
             let mem = alloc::alloc(layout);
             mem.cast::<f64>().write(rate.into());
-            let payload = mem.add(payload_offset).cast::<Sample>();
+            let payload = mem.add(payload_offset).cast::<T>();
             for (i, x) in iter.enumerate() {
                 payload.add(i).write(x);
             }
@@ -73,60 +72,61 @@ impl Samples {
     }
 
     /// Number of samples per second
+    #[inline]
     pub fn rate(&self) -> u32 {
         self.rate as u32
     }
 
     #[inline]
-    fn sample(&self, s: f64) -> f32 {
+    fn sample(&self, s: f64) -> T {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);
-        a + fract * (b - a)
+        a.lerp(&b, fract)
     }
 
     #[inline]
-    fn get(&self, sample: isize) -> f32 {
+    fn get(&self, sample: isize) -> T {
         if sample < 0 {
-            return 0.0;
+            return T::ZERO;
         }
         let sample = sample as usize;
         if sample >= self.samples.len() {
-            return 0.0;
+            return T::ZERO;
         }
         self.samples[sample]
     }
 }
 
-impl Deref for Samples {
-    type Target = [Sample];
-    fn deref(&self) -> &[Sample] {
+impl<T> Deref for Frames<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
         &self.samples
     }
 }
 
-impl DerefMut for Samples {
-    fn deref_mut(&mut self) -> &mut [Sample] {
+impl<T> DerefMut for Frames<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
         &mut self.samples
     }
 }
 
 /// An audio source backed by a static sequence of samples
 #[derive(Debug, Clone)]
-pub struct SamplesSource {
-    /// Samples to play
-    data: Arc<Samples>,
+pub struct FramesSource<T> {
+    /// Frames to play
+    data: Arc<Frames<T>>,
     /// Position of t=0 in seconds
     t: Cell<f64>,
 }
 
-impl SamplesSource {
+impl<T> FramesSource<T> {
     /// Create an audio source from some samples
     ///
     /// `start_seconds` adjusts the initial playback position, and may be negative.
-    pub fn new(data: Arc<Samples>, start_seconds: f64) -> Self {
+    pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> Self {
         Self {
             t: Cell::new(start_seconds),
             data,
@@ -134,11 +134,11 @@ impl SamplesSource {
     }
 }
 
-impl Source for SamplesSource {
-    type Frame = Sample;
+impl<T: Frame + Copy> Source for FramesSource<T> {
+    type Frame = T;
 
     #[inline]
-    fn sample(&self, offset: f32, dt: f32, mut out: StridedMut<'_, Sample>) {
+    fn sample(&self, offset: f32, dt: f32, mut out: StridedMut<'_, T>) {
         let s0 = (self.t.get() + f64::from(offset)) * self.data.rate;
         let ds = f64::from(dt) * self.data.rate;
         for (i, o) in out.iter_mut().enumerate() {
@@ -157,8 +157,8 @@ impl Source for SamplesSource {
     }
 }
 
-impl From<Arc<Samples>> for SamplesSource {
-    fn from(samples: Arc<Samples>) -> Self {
+impl<T> From<Arc<Frames<T>>> for FramesSource<T> {
+    fn from(samples: Arc<Frames<T>>) -> Self {
         Self::new(samples, 0.0)
     }
 }

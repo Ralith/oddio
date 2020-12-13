@@ -19,7 +19,7 @@ fn main() {
         sample_rate,
         buffer_size: cpal::BufferSize::Fixed(sample_rate.0 / (1000 / BUFFER_SIZE_MS)),
     };
-    let boop = oddio::Samples::from_iter(
+    let boop = oddio::Frames::from_iter(
         sample_rate.0,
         // Generate a simple sine wave
         (0..sample_rate.0 * DURATION_SECS).map(|i| {
@@ -31,7 +31,7 @@ fn main() {
     let speed = 50.0;
 
     let source = oddio::Spatial::new(
-        oddio::SamplesSource::from(boop),
+        oddio::FramesSource::from(boop),
         [-speed, 10.0, 0.0].into(),
         [speed, 0.0, 0.0].into(),
     );
@@ -42,11 +42,11 @@ fn main() {
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                let samples = oddio::frame_stereo(data);
-                for s in &mut samples[..] {
+                let frames = oddio::frame_stereo(data);
+                for s in &mut frames[..] {
                     *s = [0.0, 0.0];
                 }
-                oddio::run(&mixer, sample_rate.0, samples);
+                oddio::run(&mixer, sample_rate.0, frames);
             },
             move |err| {
                 eprintln!("{}", err);
