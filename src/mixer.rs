@@ -9,10 +9,10 @@ use std::{
     },
 };
 
-use crate::{spsc, Sample, Source, StridedMut};
+use crate::{spsc, Frame, Source, StridedMut};
 
 /// Build a remote/mixer pair
-pub fn mixer() -> (Remote, Mixer) {
+pub fn mixer<T: Frame + Copy>() -> (Remote<T>, Mixer<T>) {
     let (msg_send, msg_recv) = spsc::channel(INITIAL_CHANNEL_CAPACITY);
     let (free_send, free_recv) = spsc::channel(INITIAL_SOURCES_CAPACITY);
     let remote = Remote {
@@ -27,7 +27,7 @@ pub fn mixer() -> (Remote, Mixer) {
         recv: msg_recv,
         free: free_send,
         sources: SourceTable::with_capacity(remote.source_capacity),
-        buffer: vec![[0.0; 2]; 1024].into(),
+        buffer: vec![T::ZERO; 1024].into(),
     }));
     (remote, mixer)
 }
@@ -44,23 +44,23 @@ const INITIAL_CHANNEL_CAPACITY: usize = 3;
 const INITIAL_SOURCES_CAPACITY: usize = 4;
 
 /// Handle for controlling a [`Mixer`] from another thread
-pub struct Remote {
-    sender: spsc::Sender<Msg>,
-    free: spsc::Receiver<Free>,
-    next_free: VecDeque<spsc::Receiver<Free>>,
-    old_senders: VecDeque<spsc::Sender<Msg>>,
+pub struct Remote<T> {
+    sender: spsc::Sender<Msg<T>>,
+    free: spsc::Receiver<Free<T>>,
+    next_free: VecDeque<spsc::Receiver<Free<T>>>,
+    old_senders: VecDeque<spsc::Sender<Msg<T>>>,
     source_capacity: usize,
     active_sources: usize,
 }
 
-impl Remote {
+impl<T> Remote<T> {
     /// Begin playing `source`, returning a handle controlling its playback
     ///
     /// Finished sources are automatically stopped, and their storage reused for future `play`
     /// calls.
     pub fn play<S>(&mut self, source: S) -> Control<S>
     where
-        S: Source<Frame = [Sample; 2]> + Send + 'static,
+        S: Source<Frame = T> + Send + 'static,
     {
         self.gc();
         let source = Arc::new(SourceData {
@@ -82,7 +82,7 @@ impl Remote {
     }
 
     /// Send a message to the mixer, allocating more storage to do so if necessary
-    fn send(&mut self, msg: Msg) {
+    fn send(&mut self, msg: Msg<T>) {
         if let Err(msg) = self.sender.send(msg, 1) {
             // Channel would become full; allocate a new one
             let (mut send, recv) = spsc::channel(2 * self.sender.capacity() + 1);
@@ -138,7 +138,7 @@ impl Remote {
     }
 }
 
-unsafe impl Send for Remote {}
+unsafe impl<T> Send for Remote<T> {}
 
 /// Handle for manipulating a source while it plays
 pub struct Control<T: ?Sized> {
@@ -199,17 +199,17 @@ impl<T> Deref for Output<T> {
 }
 
 /// A [`Source`] that mixes a dynamic set of [`Source`]s, controlled by a [`Remote`]
-pub struct Mixer(UnsafeCell<MixerInner>);
+pub struct Mixer<T>(UnsafeCell<MixerInner<T>>);
 
-struct MixerInner {
-    recv: spsc::Receiver<Msg>,
-    free: spsc::Sender<Free>,
-    sources: SourceTable,
+struct MixerInner<T> {
+    recv: spsc::Receiver<Msg<T>>,
+    free: spsc::Sender<Free<T>>,
+    sources: SourceTable<T>,
     // Temporary storage for inner source data before mixing
-    buffer: Box<[[Sample; 2]]>,
+    buffer: Box<[T]>,
 }
 
-impl MixerInner {
+impl<T> MixerInner<T> {
     fn drain_msgs(&mut self) {
         self.recv.update();
         while let Some(msg) = self.recv.pop() {
@@ -240,17 +240,17 @@ impl MixerInner {
     }
 }
 
-unsafe impl Send for Mixer {}
+unsafe impl<T> Send for Mixer<T> {}
 
-impl Source for Mixer {
-    type Frame = [Sample; 2];
+impl<T: Frame> Source for Mixer<T> {
+    type Frame = T;
 
     fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, Self::Frame>) {
         let this = unsafe { &mut *self.0.get() }; // Sound because `Self: !Sync`
         this.drain_msgs();
 
         for o in &mut out {
-            *o = [0.0; 2];
+            *o = T::ZERO;
         }
 
         for i in (0..this.sources.len()).rev() {
@@ -277,8 +277,7 @@ impl Source for Mixer {
                     staging.into(),
                 );
                 for (staged, o) in staging.iter().zip(&mut iter) {
-                    o[0] += staged[0];
-                    o[1] += staged[1];
+                    *o = o.mix(staged);
                 }
                 i += n;
             }
@@ -298,12 +297,12 @@ impl Source for Mixer {
     }
 }
 
-type SourceTable = Vec<Output<[Sample; 2]>>;
+type SourceTable<T> = Vec<Output<T>>;
 
-enum Msg {
-    ReallocChannel(spsc::Receiver<Msg>),
-    ReallocSources(SourceTable, spsc::Sender<Free>),
-    Play(Output<[Sample; 2]>),
+enum Msg<T> {
+    ReallocChannel(spsc::Receiver<Msg<T>>),
+    ReallocSources(SourceTable<T>, spsc::Sender<Free<T>>),
+    Play(Output<T>),
 }
 
 /// State shared between [`Control`] and [`Output`]
@@ -312,9 +311,9 @@ struct SourceData<S: ?Sized> {
     source: S,
 }
 
-enum Free {
-    Table(Vec<Output<[Sample; 2]>>),
-    Source(Output<[Sample; 2]>),
+enum Free<T> {
+    Table(Vec<Output<T>>),
+    Source(Output<T>),
 }
 
 #[cfg(test)]
