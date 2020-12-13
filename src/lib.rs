@@ -20,6 +20,11 @@
 //! // When position/velocity changes:
 //! handle.set_motion(position, velocity);
 //! ```
+//!
+//! Key primitives:
+//! - [`Frames`] stores static audio data, which can be played with a [`FramesSource`]
+//! - [`Mixer`]s allow multiple sources to be played concurrently
+//! - [`run`] writes frames from a [`Source`] into an output buffer
 
 #![warn(missing_docs)]
 
