@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Sample, Sampler, Source};
+use crate::{Sample, Source, StridedMut};
 
 /// A sequence of audio samples at a particular rate
 ///
@@ -135,13 +135,14 @@ impl SamplesSource {
 }
 
 impl Source for SamplesSource {
-    type Sampler = SamplesSampler;
+    type Frame = Sample;
 
     #[inline]
-    fn sample(&self, dt: f32) -> SamplesSampler {
-        SamplesSampler {
-            s0: self.t.get() * self.data.rate,
-            ds: f64::from(dt) * self.data.rate,
+    fn sample(&self, offset: f32, dt: f32, mut out: StridedMut<'_, Sample>) {
+        let s0 = (self.t.get() + f64::from(offset)) * self.data.rate;
+        let ds = f64::from(dt) * self.data.rate;
+        for (i, o) in out.iter_mut().enumerate() {
+            *o = self.data.sample(s0 + ds * i as f64);
         }
     }
 
@@ -153,20 +154,6 @@ impl Source for SamplesSource {
     #[inline]
     fn remaining(&self) -> f32 {
         (self.data.samples.len() as f64 - self.t.get() * self.data.rate) as f32
-    }
-}
-
-/// Sampler for [`SamplesSource`]
-pub struct SamplesSampler {
-    s0: f64,
-    ds: f64,
-}
-
-impl Sampler<SamplesSource> for SamplesSampler {
-    type Frame = Sample;
-    #[inline]
-    fn get(&self, source: &SamplesSource, t: f32) -> Sample {
-        source.data.sample(self.s0 + f64::from(t) * self.ds)
     }
 }
 

@@ -34,13 +34,15 @@ mod spsc;
 mod stream;
 mod swap;
 mod worker;
+pub mod strided;
 
 pub use samples::*;
 pub use source::*;
-pub use spatial::{Spatial, SpatialSampler};
+pub use spatial::Spatial;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use swap::Swap;
 pub use worker::*;
+pub use strided::StridedMut;
 
 /// Unitless instantaneous sound wave amplitude measurement
 pub type Sample = f32;
@@ -48,4 +50,17 @@ pub type Sample = f32;
 /// Convert a slice of interleaved stereo data into a slice of stereo frames
 pub fn frame_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {
     unsafe { std::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() / 2) }
+}
+
+fn split_stereo<'a>(xs: &'a mut StridedMut<'_, [Sample; 2]>) -> [StridedMut<'a, Sample>; 2] {
+    unsafe {
+        [
+            StridedMut::from_raw_parts(xs.as_ptr().cast(), xs.stride() * 2, xs.len()),
+            StridedMut::from_raw_parts(
+                xs.as_ptr().cast::<Sample>().add(1),
+                xs.stride() * 2,
+                xs.len(),
+            ),
+        ]
+    }
 }

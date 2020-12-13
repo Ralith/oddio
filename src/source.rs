@@ -1,31 +1,28 @@
-use crate::Sample;
+use crate::{split_stereo, Sample, StridedMut};
 
-/// An audio signal with a cursor and local random access
+/// An audio signal with a cursor
 ///
-/// To ensure glitch-free audio, *none* of these methods should perform any operation that may
+/// To ensure glitch-free audio, none of these methods should perform any operation that may
 /// wait. This includes locks, memory allocation or freeing, and even unbounded compare-and-swap
 /// loops.
-///
-/// Note that all methods take `&self`, even when side-effects might be expected. Implementers are
-/// expected to rely on interior mutability. This allows `Source`s to be accessed while playing via
-/// [`Handle`](crate::Handle), permitting real-time control with e.g. atomics.
 pub trait Source {
-    /// Helper returned by `sample` to expose a region of data for sampling
-    type Sampler: Sampler<Self>;
+    /// Type of frames yielded by `get`, e.g. `[Sample; 2]` for stereo.
+    type Frame;
 
-    /// Construct a sampler covering `dt` seconds
+    /// Sample a period of `sample_length * out.len()` seconds starting at `offset` from the cursor.
     ///
-    /// `dt` represents the size of the period that will be sampled, but does *not* imply sampling
-    /// specifically the period [0, dt). However, the sampled period should be near 0 for best
-    /// precision. Large values of `dt` may also compromise precision.
-    fn sample(&self, dt: f32) -> Self::Sampler;
+    /// `sample_length` and `offset` may be negative. Output is written at intervals of `stride`.
+    fn sample(&self, offset: f32, sample_length: f32, out: StridedMut<'_, Self::Frame>);
 
     /// Advance time by `dt` seconds
     ///
-    /// Future calls to `sample` will behave as if `dt` were added to the argument, potentially with
-    /// extra precision. Typically invoked after a batch of samples have been taken, with the same
-    /// `dt` that was passed to `sample`.
-    // TODO: Fold this into `Sampler::drop` once GATs exist so `Sampler` can borrow `self`
+    /// Future calls to `sample` will behave as if `dt` were added to `offset`, potentially with
+    /// extra precision. Typically invoked after a batch of samples have been taken, with the total
+    /// period covered by those samples.
+    ///
+    /// Note that this method takes `&self`, even though side-effects are expected. Implementers are
+    /// expected to rely on interior mutability. This allows `Source`s to be accessed while playing
+    /// via [`Handle`](crate::Handle), permitting real-time control with e.g. atomics.
     fn advance(&self, dt: f32);
 
     /// Seconds until data runs out
@@ -42,37 +39,24 @@ pub trait Source {
     /// Convert a source from mono to stereo by duplicating its output across both channels
     fn into_stereo(self) -> MonoToStereo<Self>
     where
-        Self: Sized,
-        Self::Sampler: Sampler<Self, Frame = Sample>,
+        Self: Source<Frame = Sample> + Sized,
     {
         MonoToStereo(self)
     }
 }
 
-/// Accessor for obtaining samples from a [`Source`]
-pub trait Sampler<T: ?Sized> {
-    /// Type of frames yielded by `get`, e.g. `[Sample; 2]` for stereo.
-    type Frame;
-
-    /// Fetch a frame in the neighborhood of the batch
-    ///
-    /// `t` is a proportion, not seconds. `t = 0` corresponds to the source's internal cursor, and
-    /// `t = 1` to that time plus `dt`. Points sampled may fall outside that range, but should not
-    /// cover a total range wider than 1.
-    fn get(&self, source: &T, t: f32) -> Self::Frame;
-}
-
 /// Adapt a mono source to output stereo by duplicating its output
 pub struct MonoToStereo<T>(pub T);
 
-impl<T: Source> Source for MonoToStereo<T>
-where
-    T::Sampler: Sampler<T, Frame = Sample>,
-{
-    type Sampler = MonoToStereoSampler<T::Sampler>;
+impl<T: Source<Frame = Sample>> Source for MonoToStereo<T> {
+    type Frame = [Sample; 2];
 
-    fn sample(&self, dt: f32) -> MonoToStereoSampler<T::Sampler> {
-        MonoToStereoSampler(self.0.sample(dt))
+    fn sample(&self, dt: f32, offset: f32, mut out: StridedMut<'_, Self::Frame>) {
+        let [left, _] = split_stereo(&mut out);
+        self.0.sample(dt, offset, left);
+        for frame in &mut out {
+            frame[1] = frame[0];
+        }
     }
 
     fn advance(&self, dt: f32) {
@@ -84,45 +68,36 @@ where
     }
 }
 
-/// Sampler for [`MonoToStereo`]
-pub struct MonoToStereoSampler<T>(pub T);
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
 
-impl<T> Sampler<MonoToStereo<T>> for MonoToStereoSampler<T::Sampler>
-where
-    T: Source,
-    T::Sampler: Sampler<T, Frame = Sample>,
-{
-    type Frame = [Sample; 2];
-    fn get(&self, source: &MonoToStereo<T>, t: f32) -> Self::Frame {
-        let x = self.0.get(&source.0, t);
-        [x, x]
+    use super::*;
+
+    struct CountingSource(Cell<u32>);
+
+    impl Source for CountingSource {
+        type Frame = Sample;
+        fn sample(&self, _: f32, _: f32, mut out: StridedMut<'_, Self::Frame>) {
+            for x in &mut out {
+                let i = self.0.get();
+                *x = i as f32;
+                self.0.set(i + 1);
+            }
+        }
+
+        fn advance(&self, _: f32) {}
+
+        fn remaining(&self) -> f32 {
+            f32::INFINITY
+        }
     }
-}
 
-/// Type-erased source suitable for stereo mixing
-pub(crate) trait Mix {
-    /// Returns whether the source should be dropped
-    unsafe fn mix(&self, sample_duration: f32, out: &mut [[Sample; 2]]) -> bool;
-}
-
-impl<T: Source> Mix for T
-where
-    T::Sampler: Sampler<T, Frame = [Sample; 2]>,
-{
-    unsafe fn mix(&self, sample_duration: f32, out: &mut [[Sample; 2]]) -> bool {
-        if self.remaining() < 0.0 {
-            return true;
-        }
-        let dt = sample_duration * out.len() as f32;
-        let step = 1.0 / out.len() as f32;
-        let batch = self.sample(dt);
-        for (i, x) in out.iter_mut().enumerate() {
-            let t = i as f32 * step;
-            let frame = batch.get(self, t);
-            x[0] += frame[0];
-            x[1] += frame[1];
-        }
-        self.advance(dt);
-        false
+    #[test]
+    fn mono_to_stereo() {
+        let source = CountingSource(Cell::new(0)).into_stereo();
+        let mut buf = [[0.0; 2]; 4];
+        source.sample(1.0, 0.0, (&mut buf[..]).into());
+        assert_eq!(buf, [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]);
     }
 }

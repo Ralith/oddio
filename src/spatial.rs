@@ -3,8 +3,9 @@ use std::ops::{Index, IndexMut};
 
 use crate::{
     math::{add, dot, mix, norm, scale, sub},
+    split_stereo,
     swap::Swap,
-    Handle, Sample, Sampler, Source,
+    Handle, Sample, Source, StridedMut,
 };
 
 /// Places a mono source at an adjustable position and velocity wrt. the listener
@@ -36,90 +37,73 @@ impl<T> Spatial<T> {
 
 impl<T> Source for Spatial<T>
 where
-    T: Source,
-    T::Sampler: Sampler<T, Frame = Sample>,
+    T: Source<Frame = Sample>,
 {
-    type Sampler = SpatialSampler<T::Sampler>;
+    type Frame = [Sample; 2];
 
-    fn sample(&self, world_dt: f32) -> SpatialSampler<T::Sampler> {
+    fn sample(&self, offset: f32, world_dt: f32, mut out: StridedMut<'_, [Sample; 2]>) {
+        let state;
+        let next_position;
         unsafe {
             // Update motion
             let orig_next = *self.motion.received();
             if self.motion.refresh() {
                 let state = &mut *self.state.get();
-                state.prev_position = state.smoothed_position(&orig_next);
+                state.prev_position = state.smoothed_position(0.0, &orig_next);
                 state.dt = 0.0;
             } else {
                 debug_assert_eq!(orig_next.position, (*self.motion.received()).position);
             }
 
-            // Compute sampling parameters
-            let state = &mut *self.state.get();
-            state.dt += world_dt;
-            let next_position = state.smoothed_position(&*self.motion.received());
-            let mut t0 = [0.0; 2];
-            let mut dt = [0.0; 2];
-            let mut initial_attenuation = [0.0; 2];
-            let mut attenuation_change = [0.0; 2];
-            for &ear in [Ear::Left, Ear::Right].iter() {
-                t0[ear] = state.ears[ear].offset / world_dt;
-                let next_state = EarState::new(next_position, ear);
-                let offset_change = next_state.offset - state.ears[ear].offset;
-                dt[ear] = (world_dt + offset_change) / world_dt;
-                initial_attenuation[ear] = state.ears[ear].attenuation;
-                attenuation_change[ear] = next_state.attenuation - state.ears[ear].attenuation;
-                state.ears[ear] = next_state;
-            }
-            SpatialSampler {
-                inner: self.inner.sample(world_dt),
-                t0,
-                dt,
-                initial_attenuation,
-                attenuation_change,
+            state = &mut *self.state.get();
+            next_position =
+                state.smoothed_position(world_dt * out.len() as f32, &*self.motion.received());
+        }
+
+        // Compute sampling parameters
+        let mut t0 = [0.0; 2];
+        let mut dt = [0.0; 2];
+        let mut initial_attenuation = [0.0; 2];
+        let mut attenuation_change = [0.0; 2];
+        let recip_samples = 1.0 / out.len() as f32;
+        for &ear in [Ear::Left, Ear::Right].iter() {
+            t0[ear] = offset + state.ears[ear].offset;
+            let next_state = EarState::new(next_position, ear);
+            dt[ear] = (next_state.offset - state.ears[ear].offset) * recip_samples + world_dt;
+            initial_attenuation[ear] = state.ears[ear].attenuation;
+            attenuation_change[ear] =
+                (next_state.attenuation - state.ears[ear].attenuation) * recip_samples;
+            state.ears[ear] = next_state;
+        }
+
+        // Sample
+        let mut bufs = split_stereo(&mut out);
+        for &ear in [Ear::Left, Ear::Right].iter() {
+            self.inner.sample(t0[ear], dt[ear], bufs[ear].borrow());
+        }
+
+        // Fix up amplitude
+        for &ear in [Ear::Left, Ear::Right].iter() {
+            for (t, o) in bufs[ear].iter_mut().enumerate() {
+                *o *= initial_attenuation[ear] + t as f32 * attenuation_change[ear];
             }
         }
     }
 
     fn advance(&self, dt: f32) {
+        unsafe {
+            (*self.state.get()).dt += dt;
+        }
         self.inner.advance(dt);
     }
 
     fn remaining(&self) -> f32 {
         let position = unsafe {
             let state = &mut *self.state.get();
-            state.smoothed_position(&*self.motion.received())
+            state.smoothed_position(0.0, &*self.motion.received())
         };
         let distance = norm(position.into());
         self.inner.remaining() + distance / SPEED_OF_SOUND
-    }
-}
-
-/// Sampler for [`Spatial`]
-pub struct SpatialSampler<T> {
-    inner: T,
-    t0: [f32; 2],
-    dt: [f32; 2],
-    initial_attenuation: [f32; 2],
-    attenuation_change: [f32; 2],
-}
-
-impl<T> Sampler<Spatial<T>> for SpatialSampler<T::Sampler>
-where
-    T: Source,
-    T::Sampler: Sampler<T, Frame = Sample>,
-{
-    type Frame = [Sample; 2];
-
-    fn get(&self, source: &Spatial<T>, t: f32) -> [Sample; 2] {
-        let mut out = [0.0; 2];
-        for &ear in [Ear::Left, Ear::Right].iter() {
-            let attenuation = self.initial_attenuation[ear] + t * self.attenuation_change[ear];
-            out[ear] = attenuation
-                * self
-                    .inner
-                    .get(&source.inner, self.t0[ear] + t * self.dt[ear])
-        }
-        out
     }
 }
 
@@ -148,14 +132,15 @@ struct State {
 }
 
 impl State {
-    fn smoothed_position(&self, next: &Motion) -> mint::Point3<f32> {
-        let position_change = scale(next.velocity, self.dt);
+    fn smoothed_position(&self, offset: f32, next: &Motion) -> mint::Point3<f32> {
+        let dt = self.dt + offset;
+        let position_change = scale(next.velocity, dt);
         let naive_position = add(self.prev_position, position_change);
         let intended_position = add(next.position, position_change);
         mix(
             naive_position,
             intended_position,
-            (self.dt / POSITION_SMOOTHING_PERIOD).min(1.0),
+            (dt / POSITION_SMOOTHING_PERIOD).min(1.0),
         )
     }
 }
