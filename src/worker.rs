@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use crate::{spsc, Sample, Source};
+use crate::{spsc, Sample, Source, StridedMut};
 
 /// Build a remote/worker pair
 pub fn worker() -> (Remote, Worker) {
@@ -22,11 +22,11 @@ pub fn worker() -> (Remote, Worker) {
         source_capacity: INITIAL_SOURCES_CAPACITY,
         active_sources: 0,
     };
-    let worker = Worker {
+    let worker = Worker(UnsafeCell::new(WorkerInner {
         recv: msg_recv,
         free: free_send,
         sources: SourceTable::with_capacity(remote.source_capacity),
-    };
+    }));
     (remote, worker)
 }
 
@@ -63,7 +63,7 @@ impl Remote {
         self.gc();
         let source = Arc::new(SourceData {
             stop: AtomicBool::new(false),
-            source: UnsafeCell::new(source),
+            source: source,
         });
         if self.active_sources == self.source_capacity {
             self.source_capacity *= 2;
@@ -159,8 +159,8 @@ impl<T> Handle<T> {
     ///
     /// Because sources have interior mutability and are hence usually `!Sync`, this must be used to
     /// construct safe interfaces when access to shared state is required.
-    pub fn get(&self) -> *mut T {
-        self.inner.source.get()
+    pub fn get(&self) -> *const T {
+        &self.inner.source
     }
 }
 
@@ -168,41 +168,15 @@ impl<T> Handle<T> {
 ///
 /// For real-time audio, this should be passed into the audio worker thread, e.g. the data callback
 /// in cpal's `build_output_stream`.
-pub struct Worker {
+pub struct Worker(UnsafeCell<WorkerInner>);
+
+struct WorkerInner {
     recv: spsc::Receiver<Msg>,
     free: spsc::Sender<Free>,
     sources: SourceTable,
 }
 
-impl Worker {
-    /// Write frames of stereo audio to `samples` for playback at `rate`
-    ///
-    /// Guaranteed to be wait-free, suitable for invocation on a real-time audio thread.
-    ///
-    /// Adds to the existing contents of `samples`. Be sure you zero it out first!
-    pub fn render(&mut self, rate: u32, samples: &mut [[Sample; 2]]) {
-        self.drain_msgs();
-
-        let sample_duration = 1.0 / rate as f32;
-        let dt = sample_duration * samples.len() as f32;
-        for i in (0..self.sources.len()).rev() {
-            let slot = &self.sources[i];
-            let source = unsafe { &mut *slot.source.get() };
-            if source.remaining() < 0.0 {
-                slot.stop.store(true, Ordering::Relaxed);
-            }
-            if slot.stop.load(Ordering::Relaxed) {
-                self.free
-                    .send(Free::Source(self.sources.swap_remove(i)), 0)
-                    .unwrap_or_else(|_| unreachable!("free queue has capacity for every source"));
-            } else {
-                source.sample(0.0, sample_duration, samples.into());
-                source.advance(dt);
-                // FIXME: MIX, don't clobber! Need intermediate buffer.
-            }
-        }
-    }
-
+impl WorkerInner {
     fn drain_msgs(&mut self) {
         self.recv.update();
         while let Some(msg) = self.recv.pop() {
@@ -235,6 +209,42 @@ impl Worker {
 
 unsafe impl Send for Worker {}
 
+impl Source for Worker {
+    type Frame = [Sample; 2];
+
+    fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, Self::Frame>) {
+        let this = unsafe { &mut *self.0.get() };
+        this.drain_msgs();
+
+        for i in (0..this.sources.len()).rev() {
+            let slot = &this.sources[i];
+            if slot.source.remaining() < 0.0 {
+                slot.stop.store(true, Ordering::Relaxed);
+            }
+            if slot.stop.load(Ordering::Relaxed) {
+                this.free
+                    .send(Free::Source(this.sources.swap_remove(i)), 0)
+                    .unwrap_or_else(|_| unreachable!("free queue has capacity for every source"));
+            } else {
+                slot.source.sample(offset, sample_duration, out.borrow());
+                // FIXME: MIX, don't clobber! Need intermediate buffer.
+            }
+        }
+    }
+
+    fn advance(&self, dt: f32) {
+        let this = unsafe { &mut *self.0.get() };
+        for slot in &this.sources {
+            slot.source.advance(dt);
+        }
+    }
+
+    #[inline]
+    fn remaining(&self) -> f32 {
+        f32::INFINITY
+    }
+}
+
 type SourceTable = Vec<ErasedSource>;
 
 /// Type-erased internal reference to a source
@@ -248,7 +258,7 @@ enum Msg {
 
 struct SourceData<S: ?Sized> {
     stop: AtomicBool,
-    source: UnsafeCell<S>,
+    source: S,
 }
 
 enum Free {
@@ -265,25 +275,28 @@ mod tests {
 
     #[test]
     fn realloc_sources() {
-        let (mut remote, mut worker) = worker();
+        let (mut remote, worker) = worker();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         for i in 1..=(INITIAL_SOURCES_CAPACITY + 2) {
             remote.play(source.clone().into_stereo());
-            worker.render(RATE, &mut []); // Process messages
-            assert_eq!(worker.sources.len(), i);
+            worker.sample(0.0, 1.0, StridedMut::default()); // Process messages
+            assert_eq!(unsafe { (*worker.0.get()).sources.len() }, i);
         }
     }
 
     #[test]
     fn realloc_channel() {
-        let (mut remote, mut worker) = worker();
+        let (mut remote, worker) = worker();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         for _ in 0..(INITIAL_CHANNEL_CAPACITY + 2) {
             remote.play(source.clone().into_stereo());
         }
         assert_eq!(remote.sender.capacity(), 1 + 2 * INITIAL_CHANNEL_CAPACITY);
-        assert_eq!(worker.sources.len(), 0);
-        worker.render(RATE, &mut []); // Process messages
-        assert_eq!(worker.sources.len(), INITIAL_CHANNEL_CAPACITY + 2);
+        assert_eq!(unsafe { (*worker.0.get()).sources.len() }, 0);
+        worker.sample(0.0, 1.0, StridedMut::default()); // Process messages
+        assert_eq!(
+            unsafe { (*worker.0.get()).sources.len() },
+            INITIAL_CHANNEL_CAPACITY + 2
+        );
     }
 }

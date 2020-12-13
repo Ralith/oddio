@@ -25,7 +25,7 @@ fn main() {
 
     let mut samples = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
     for chunk in samples.chunks_mut(FRAME_SIZE) {
-        worker.render(RATE, chunk);
+        oddio::run(&mut worker, RATE, chunk);
     }
 
     let track = wav::BitDepth::Sixteen(

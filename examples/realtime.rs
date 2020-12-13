@@ -46,7 +46,7 @@ fn main() {
                 for s in &mut samples[..] {
                     *s = [0.0, 0.0];
                 }
-                worker.render(sample_rate.0, samples);
+                oddio::run(&mut worker, sample_rate.0, samples);
             },
             move |err| {
                 eprintln!("{}", err);
