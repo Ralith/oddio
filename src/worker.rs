@@ -2,6 +2,7 @@ use std::{
     cell::UnsafeCell,
     collections::VecDeque,
     mem,
+    ops::Deref,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -56,14 +57,14 @@ impl Remote {
     ///
     /// Finished sources are automatically stopped, and their storage reused for future `play`
     /// calls.
-    pub fn play<S>(&mut self, source: S) -> Handle<S>
+    pub fn play<S>(&mut self, source: S) -> Control<S>
     where
         S: Source<Frame = [Sample; 2]> + Send + 'static,
     {
         self.gc();
         let source = Arc::new(SourceData {
             stop: AtomicBool::new(false),
-            source: source,
+            source,
         });
         if self.active_sources == self.source_capacity {
             self.source_capacity *= 2;
@@ -72,9 +73,11 @@ impl Remote {
             self.send(Msg::ReallocSources(sources, free_send));
             self.next_free.push_back(free_recv);
         }
-        self.send(Msg::Play(source.clone()));
+        self.send(Msg::Play(Output {
+            inner: source.clone(),
+        }));
         self.active_sources += 1;
-        Handle { inner: source }
+        Control { inner: source }
     }
 
     /// Send a message to the worker thread, allocating more storage to do so if necessary
@@ -136,15 +139,15 @@ impl Remote {
 
 unsafe impl Send for Remote {}
 
-/// Handle to an active source
-pub struct Handle<T> {
+/// Handle for manipulating a source while it plays
+pub struct Control<T: ?Sized> {
     inner: Arc<SourceData<T>>,
 }
 
-// Sound because `T` is not exposed by any safe interface
-unsafe impl<T> Sync for Handle<T> {}
+// Sound because `T` is not accessible through any safe interface unless `T: Sync`
+unsafe impl<T> Send for Control<T> {}
 
-impl<T> Handle<T> {
+impl<T> Control<T> {
     /// Stop playing the source, allowing it to be dropped on a future `play` invocation
     pub fn stop(&self) {
         self.inner.stop.store(true, Ordering::Relaxed);
@@ -155,11 +158,41 @@ impl<T> Handle<T> {
         self.inner.stop.load(Ordering::Relaxed)
     }
 
-    /// Access the source
+    /// Access a potentially `!Sync` source
     ///
-    /// Because sources have interior mutability and are hence usually `!Sync`, this must be used to
-    /// construct safe interfaces when access to shared state is required.
+    /// Building block for safe abstractions over nontrivial shared memory.
     pub fn get(&self) -> *const T {
+        &self.inner.source
+    }
+}
+
+impl<T: Sync> AsRef<T> for Control<T> {
+    fn as_ref(&self) -> &T {
+        &self.inner.source
+    }
+}
+
+/// Type-erased handle for playing a source
+struct Output<T> {
+    inner: Arc<SourceData<dyn Source<Frame = T> + Send>>,
+}
+
+impl<T> Output<T> {
+    /// Stop playing the source, allowing it to be dropped on a future `play` invocation
+    pub fn stop(&self) {
+        self.inner.stop.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether the source is no longer being played
+    pub fn is_stopped(&self) -> bool {
+        self.inner.stop.load(Ordering::Relaxed)
+    }
+}
+
+impl<T> Deref for Output<T> {
+    type Target = dyn Source<Frame = T>;
+
+    fn deref(&self) -> &(dyn Source<Frame = T> + 'static) {
         &self.inner.source
     }
 }
@@ -213,20 +246,20 @@ impl Source for Worker {
     type Frame = [Sample; 2];
 
     fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, Self::Frame>) {
-        let this = unsafe { &mut *self.0.get() };
+        let this = unsafe { &mut *self.0.get() }; // Sound because `Self: !Sync`
         this.drain_msgs();
 
         for i in (0..this.sources.len()).rev() {
-            let slot = &this.sources[i];
-            if slot.source.remaining() < 0.0 {
-                slot.stop.store(true, Ordering::Relaxed);
+            let source = &this.sources[i];
+            if source.remaining() < 0.0 {
+                source.stop();
             }
-            if slot.stop.load(Ordering::Relaxed) {
+            if source.is_stopped() {
                 this.free
                     .send(Free::Source(this.sources.swap_remove(i)), 0)
                     .unwrap_or_else(|_| unreachable!("free queue has capacity for every source"));
             } else {
-                slot.source.sample(offset, sample_duration, out.borrow());
+                source.sample(offset, sample_duration, out.borrow());
                 // FIXME: MIX, don't clobber! Need intermediate buffer.
             }
         }
@@ -234,8 +267,8 @@ impl Source for Worker {
 
     fn advance(&self, dt: f32) {
         let this = unsafe { &mut *self.0.get() };
-        for slot in &this.sources {
-            slot.source.advance(dt);
+        for source in &this.sources {
+            source.advance(dt);
         }
     }
 
@@ -245,25 +278,23 @@ impl Source for Worker {
     }
 }
 
-type SourceTable = Vec<ErasedSource>;
-
-/// Type-erased internal reference to a source
-type ErasedSource = Arc<SourceData<dyn Source<Frame = [Sample; 2]>>>;
+type SourceTable = Vec<Output<[Sample; 2]>>;
 
 enum Msg {
     ReallocChannel(spsc::Receiver<Msg>),
     ReallocSources(SourceTable, spsc::Sender<Free>),
-    Play(ErasedSource),
+    Play(Output<[Sample; 2]>),
 }
 
+/// State shared between [`Control`] and [`Output`]
 struct SourceData<S: ?Sized> {
     stop: AtomicBool,
     source: S,
 }
 
 enum Free {
-    Table(Vec<ErasedSource>),
-    Source(ErasedSource),
+    Table(Vec<Output<[Sample; 2]>>),
+    Source(Output<[Sample; 2]>),
 }
 
 #[cfg(test)]
