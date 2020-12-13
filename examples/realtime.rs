@@ -36,7 +36,7 @@ fn main() {
         [speed, 0.0, 0.0].into(),
     );
 
-    let (mut remote, mut mixer) = oddio::mixer();
+    let (mut remote, mixer) = oddio::mixer();
 
     let stream = device
         .build_output_stream(
@@ -46,7 +46,7 @@ fn main() {
                 for s in &mut samples[..] {
                     *s = [0.0, 0.0];
                 }
-                oddio::run(&mut mixer, sample_rate.0, samples);
+                oddio::run(&mixer, sample_rate.0, samples);
             },
             move |err| {
                 eprintln!("{}", err);

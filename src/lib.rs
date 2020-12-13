@@ -1,13 +1,13 @@
 //! Lightweight game audio
 //!
 //! ```no_run
-//! let (mut remote, mut mixer) = oddio::mixer();
+//! let (mut remote, mixer) = oddio::mixer();
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];
 //! # let output_sample_rate = 44100;
 //! let out_frames = oddio::frame_stereo(data);
-//! oddio::run(&mut mixer, output_sample_rate, out_frames);
+//! oddio::run(&mixer, output_sample_rate, out_frames);
 //!
 //! // In game logic:
 //! # let samples = [];
@@ -47,7 +47,7 @@ pub type Sample = f32;
 /// Populate `out` with samples from `source` at `sample_rate`
 ///
 /// Convenience wrapper around the [`Source`] interface.
-pub fn run<S: Source>(source: &mut S, sample_rate: u32, out: &mut [S::Frame]) {
+pub fn run<S: Source>(source: &S, sample_rate: u32, out: &mut [S::Frame]) {
     let sample_len = 1.0 / sample_rate as f32;
     source.sample(0.0, sample_len, out.into());
     source.advance(sample_len * out.len() as f32);

@@ -20,12 +20,12 @@ fn main() {
         [SPEED, 0.0, 0.0].into(),
     );
 
-    let (mut remote, mut mixer) = oddio::mixer();
+    let (mut remote, mixer) = oddio::mixer();
     remote.play(boop);
 
     let mut samples = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
     for chunk in samples.chunks_mut(FRAME_SIZE) {
-        oddio::run(&mut mixer, RATE, chunk);
+        oddio::run(&mixer, RATE, chunk);
     }
 
     let track = wav::BitDepth::Sixteen(
