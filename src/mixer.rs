@@ -11,8 +11,8 @@ use std::{
 
 use crate::{spsc, Sample, Source, StridedMut};
 
-/// Build a remote/worker pair
-pub fn worker() -> (Remote, Worker) {
+/// Build a remote/mixer pair
+pub fn mixer() -> (Remote, Mixer) {
     let (msg_send, msg_recv) = spsc::channel(INITIAL_CHANNEL_CAPACITY);
     let (free_send, free_recv) = spsc::channel(INITIAL_SOURCES_CAPACITY);
     let remote = Remote {
@@ -23,13 +23,13 @@ pub fn worker() -> (Remote, Worker) {
         source_capacity: INITIAL_SOURCES_CAPACITY,
         active_sources: 0,
     };
-    let worker = Worker(UnsafeCell::new(WorkerInner {
+    let mixer = Mixer(UnsafeCell::new(MixerInner {
         recv: msg_recv,
         free: free_send,
         sources: SourceTable::with_capacity(remote.source_capacity),
         buffer: vec![[0.0; 2]; 1024].into(),
     }));
-    (remote, worker)
+    (remote, mixer)
 }
 
 #[cfg(not(miri))]
@@ -43,7 +43,7 @@ const INITIAL_CHANNEL_CAPACITY: usize = 3;
 #[cfg(miri)]
 const INITIAL_SOURCES_CAPACITY: usize = 4;
 
-/// Handle for controlling a [`Worker`] from another thread
+/// Handle for controlling a [`Mixer`] from another thread
 pub struct Remote {
     sender: spsc::Sender<Msg>,
     free: spsc::Receiver<Free>,
@@ -54,7 +54,7 @@ pub struct Remote {
 }
 
 impl Remote {
-    /// Begin playing `source`, returning an ID that can be used to manipulate its playback
+    /// Begin playing `source`, returning a handle controlling its playback
     ///
     /// Finished sources are automatically stopped, and their storage reused for future `play`
     /// calls.
@@ -81,7 +81,7 @@ impl Remote {
         Control { inner: source }
     }
 
-    /// Send a message to the worker thread, allocating more storage to do so if necessary
+    /// Send a message to the mixer, allocating more storage to do so if necessary
     fn send(&mut self, msg: Msg) {
         if let Err(msg) = self.sender.send(msg, 1) {
             // Channel would become full; allocate a new one
@@ -109,7 +109,7 @@ impl Remote {
             self.gc_inner();
             if !self.free.is_closed() || self.sender.is_closed() {
                 // If the free queue isn't closed, it may get more data in the future. If the
-                // message queue is closed, then the worker's gone and none of this
+                // message queue is closed, then the mixer's gone and none of this
                 // matters. Otherwise, we must be switching to a new free queue.
                 break;
             }
@@ -198,13 +198,10 @@ impl<T> Deref for Output<T> {
     }
 }
 
-/// Writes output audio samples on demand
-///
-/// For real-time audio, this should be passed into the audio worker thread, e.g. the data callback
-/// in cpal's `build_output_stream`.
-pub struct Worker(UnsafeCell<WorkerInner>);
+/// A [`Source`] that mixes a dynamic set of [`Source`]s, controlled by a [`Remote`]
+pub struct Mixer(UnsafeCell<MixerInner>);
 
-struct WorkerInner {
+struct MixerInner {
     recv: spsc::Receiver<Msg>,
     free: spsc::Sender<Free>,
     sources: SourceTable,
@@ -212,7 +209,7 @@ struct WorkerInner {
     buffer: Box<[[Sample; 2]]>,
 }
 
-impl WorkerInner {
+impl MixerInner {
     fn drain_msgs(&mut self) {
         self.recv.update();
         while let Some(msg) = self.recv.pop() {
@@ -234,7 +231,7 @@ impl WorkerInner {
                 Play(source) => {
                     assert!(
                         self.sources.len() < self.sources.capacity(),
-                        "worker never does its own realloc"
+                        "mixer never does its own realloc"
                     );
                     self.sources.push(source);
                 }
@@ -243,9 +240,9 @@ impl WorkerInner {
     }
 }
 
-unsafe impl Send for Worker {}
+unsafe impl Send for Mixer {}
 
-impl Source for Worker {
+impl Source for Mixer {
     type Frame = [Sample; 2];
 
     fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, Self::Frame>) {
@@ -329,27 +326,27 @@ mod tests {
 
     #[test]
     fn realloc_sources() {
-        let (mut remote, worker) = worker();
+        let (mut remote, mixer) = mixer();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         for i in 1..=(INITIAL_SOURCES_CAPACITY + 2) {
             remote.play(source.clone().into_stereo());
-            worker.sample(0.0, 1.0, StridedMut::default()); // Process messages
-            assert_eq!(unsafe { (*worker.0.get()).sources.len() }, i);
+            mixer.sample(0.0, 1.0, StridedMut::default()); // Process messages
+            assert_eq!(unsafe { (*mixer.0.get()).sources.len() }, i);
         }
     }
 
     #[test]
     fn realloc_channel() {
-        let (mut remote, worker) = worker();
+        let (mut remote, mixer) = mixer();
         let source = SamplesSource::from(Samples::from_slice(RATE, &[0.0; RATE as usize]));
         for _ in 0..(INITIAL_CHANNEL_CAPACITY + 2) {
             remote.play(source.clone().into_stereo());
         }
         assert_eq!(remote.sender.capacity(), 1 + 2 * INITIAL_CHANNEL_CAPACITY);
-        assert_eq!(unsafe { (*worker.0.get()).sources.len() }, 0);
-        worker.sample(0.0, 1.0, StridedMut::default()); // Process messages
+        assert_eq!(unsafe { (*mixer.0.get()).sources.len() }, 0);
+        mixer.sample(0.0, 1.0, StridedMut::default()); // Process messages
         assert_eq!(
-            unsafe { (*worker.0.get()).sources.len() },
+            unsafe { (*mixer.0.get()).sources.len() },
             INITIAL_CHANNEL_CAPACITY + 2
         );
     }

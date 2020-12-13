@@ -11,14 +11,11 @@ Oddio is a game-oriented audio library that is:
 ### Example
 
 ```rust
-let (mut remote, mut worker) = oddio::worker();
+let (mut remote, mut mixer) = oddio::mixer();
 
 // In audio callback:
 let out_frames = oddio::frame_stereo(data);
-for s in &mut out_frames[..] {
-   *s = [0.0, 0.0];
-}
-worker.render(output_sample_rate, out_frames);
+oddio::run(&mut mixer, output_sample_rate, out_frames);
 
 // In game logic:
 let samples = oddio::SamplesSource::from(oddio::Samples::from_slice(sample_rate, &samples));

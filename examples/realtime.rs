@@ -36,7 +36,7 @@ fn main() {
         [speed, 0.0, 0.0].into(),
     );
 
-    let (mut remote, mut worker) = oddio::worker();
+    let (mut remote, mut mixer) = oddio::mixer();
 
     let stream = device
         .build_output_stream(
@@ -46,7 +46,7 @@ fn main() {
                 for s in &mut samples[..] {
                     *s = [0.0, 0.0];
                 }
-                oddio::run(&mut worker, sample_rate.0, samples);
+                oddio::run(&mut mixer, sample_rate.0, samples);
             },
             move |err| {
                 eprintln!("{}", err);
@@ -67,7 +67,7 @@ fn main() {
         }
         // This is in principle a no-op because the velocity isn't changing, but due to imprecise
         // sleep times and the fact that the audio thread runs at unaligned intervals means that the
-        // this would produce glitches if not for smoothing done by the worker.
+        // this would produce glitches if not for smoothing done by `Spatial`.
         source.set_motion(
             [-speed + speed * dt.as_secs_f32(), 10.0, 0.0].into(),
             [speed, 0.0, 0.0].into(),
