@@ -7,10 +7,7 @@
 //! # let data = &mut [][..];
 //! # let output_sample_rate = 44100;
 //! let out_frames = oddio::frame_stereo(data);
-//! for s in &mut out_frames[..] {
-//!    *s = [0.0, 0.0];
-//! }
-//! worker.render(output_sample_rate, out_frames);
+//! oddio::run(&mut worker, output_sample_rate, out_frames);
 //!
 //! // In game logic:
 //! # let samples = [];
@@ -32,20 +29,29 @@ mod source;
 mod spatial;
 mod spsc;
 mod stream;
+pub mod strided;
 mod swap;
 mod worker;
-pub mod strided;
 
 pub use samples::*;
 pub use source::*;
 pub use spatial::Spatial;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
+pub use strided::StridedMut;
 pub use swap::Swap;
 pub use worker::*;
-pub use strided::StridedMut;
 
 /// Unitless instantaneous sound wave amplitude measurement
 pub type Sample = f32;
+
+/// Populate `out` with samples from `source` at `sample_rate`
+///
+/// Convenience wrapper around the [`Source`] interface.
+pub fn run<S: Source>(source: &mut S, sample_rate: u32, out: &mut [S::Frame]) {
+    let sample_len = 1.0 / sample_rate as f32;
+    source.sample(0.0, sample_len, out.into());
+    source.advance(sample_len * out.len() as f32);
+}
 
 /// Convert a slice of interleaved stereo data into a slice of stereo frames
 pub fn frame_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {
