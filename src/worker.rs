@@ -27,6 +27,7 @@ pub fn worker() -> (Remote, Worker) {
         recv: msg_recv,
         free: free_send,
         sources: SourceTable::with_capacity(remote.source_capacity),
+        buffer: vec![[0.0; 2]; 1024].into(),
     }));
     (remote, worker)
 }
@@ -207,6 +208,8 @@ struct WorkerInner {
     recv: spsc::Receiver<Msg>,
     free: spsc::Sender<Free>,
     sources: SourceTable,
+    // Temporary storage for inner source data before mixing
+    buffer: Box<[[Sample; 2]]>,
 }
 
 impl WorkerInner {
@@ -249,6 +252,10 @@ impl Source for Worker {
         let this = unsafe { &mut *self.0.get() }; // Sound because `Self: !Sync`
         this.drain_msgs();
 
+        for o in &mut out {
+            *o = [0.0; 2];
+        }
+
         for i in (0..this.sources.len()).rev() {
             let source = &this.sources[i];
             if source.remaining() < 0.0 {
@@ -258,9 +265,25 @@ impl Source for Worker {
                 this.free
                     .send(Free::Source(this.sources.swap_remove(i)), 0)
                     .unwrap_or_else(|_| unreachable!("free queue has capacity for every source"));
-            } else {
-                source.sample(offset, sample_duration, out.borrow());
-                // FIXME: MIX, don't clobber! Need intermediate buffer.
+                continue;
+            }
+
+            // Sample into `buffer`, then mix into `out`
+            let mut iter = out.iter_mut();
+            let mut i = 0;
+            while iter.len() > 0 {
+                let n = iter.len().min(this.buffer.len());
+                let staging = &mut this.buffer[..n];
+                source.sample(
+                    offset + i as f32 * sample_duration,
+                    sample_duration,
+                    staging.into(),
+                );
+                for (staged, o) in staging.iter().zip(&mut iter) {
+                    o[0] += staged[0];
+                    o[1] += staged[1];
+                }
+                i += n;
             }
         }
     }
