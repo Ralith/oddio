@@ -22,7 +22,7 @@ pub trait Source {
     ///
     /// Note that this method takes `&self`, even though side-effects are expected. Implementers are
     /// expected to rely on interior mutability. This allows `Source`s to be accessed while playing
-    /// via [`Handle`](crate::Handle), permitting real-time control with e.g. atomics.
+    /// via [`Control`](crate::Control), permitting real-time control with e.g. atomics.
     fn advance(&self, dt: f32);
 
     /// Seconds until data runs out
