@@ -5,7 +5,7 @@ use crate::{
     math::{add, dot, mix, norm, scale, sub},
     split_stereo,
     swap::Swap,
-    Handle, Sample, Source, StridedMut,
+    Control, Sample, Source, StridedMut,
 };
 
 /// Places a mono source at an adjustable position and velocity wrt. the listener
@@ -107,7 +107,7 @@ where
     }
 }
 
-impl<T> Handle<Spatial<T>> {
+impl<T> Control<Spatial<T>> {
     /// Update the position and velocity of the source
     pub fn set_motion(&mut self, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) {
         unsafe {
