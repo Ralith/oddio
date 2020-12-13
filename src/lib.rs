@@ -1,13 +1,13 @@
 //! Lightweight game audio
 //!
 //! ```no_run
-//! let (mut remote, mut worker) = oddio::worker();
+//! let (mut remote, mut mixer) = oddio::mixer();
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];
 //! # let output_sample_rate = 44100;
 //! let out_frames = oddio::frame_stereo(data);
-//! oddio::run(&mut worker, output_sample_rate, out_frames);
+//! oddio::run(&mut mixer, output_sample_rate, out_frames);
 //!
 //! // In game logic:
 //! # let samples = [];
@@ -24,6 +24,7 @@
 #![warn(missing_docs)]
 
 mod math;
+mod mixer;
 mod samples;
 mod source;
 mod spatial;
@@ -31,15 +32,14 @@ mod spsc;
 mod stream;
 pub mod strided;
 mod swap;
-mod worker;
 
+pub use mixer::*;
 pub use samples::*;
 pub use source::*;
 pub use spatial::Spatial;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use strided::StridedMut;
 pub use swap::Swap;
-pub use worker::*;
 
 /// Unitless instantaneous sound wave amplitude measurement
 pub type Sample = f32;
