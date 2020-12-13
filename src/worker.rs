@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use crate::{spsc, Mix, Sample, Sampler, Source};
+use crate::{spsc, Sample, Source};
 
 /// Build a remote/worker pair
 pub fn worker() -> (Remote, Worker) {
@@ -58,8 +58,7 @@ impl Remote {
     /// calls.
     pub fn play<S>(&mut self, source: S) -> Handle<S>
     where
-        S: Source + Send + 'static,
-        S::Sampler: Sampler<S, Frame = [Sample; 2]>,
+        S: Source<Frame = [Sample; 2]> + Send + 'static,
     {
         self.gc();
         let source = Arc::new(SourceData {
@@ -185,15 +184,21 @@ impl Worker {
         self.drain_msgs();
 
         let sample_duration = 1.0 / rate as f32;
+        let dt = sample_duration * samples.len() as f32;
         for i in (0..self.sources.len()).rev() {
-            let source = &self.sources[i];
-            if source.stop.load(Ordering::Relaxed)
-                || unsafe { (*source.source.get()).mix(sample_duration, samples) }
-            {
-                source.stop.store(true, Ordering::Relaxed);
+            let slot = &self.sources[i];
+            let source = unsafe { &mut *slot.source.get() };
+            if source.remaining() < 0.0 {
+                slot.stop.store(true, Ordering::Relaxed);
+            }
+            if slot.stop.load(Ordering::Relaxed) {
                 self.free
                     .send(Free::Source(self.sources.swap_remove(i)), 0)
                     .unwrap_or_else(|_| unreachable!("free queue has capacity for every source"));
+            } else {
+                source.sample(0.0, sample_duration, samples.into());
+                source.advance(dt);
+                // FIXME: MIX, don't clobber! Need intermediate buffer.
             }
         }
     }
@@ -233,7 +238,7 @@ unsafe impl Send for Worker {}
 type SourceTable = Vec<ErasedSource>;
 
 /// Type-erased internal reference to a source
-type ErasedSource = Arc<SourceData<dyn Mix>>;
+type ErasedSource = Arc<SourceData<dyn Source<Frame = [Sample; 2]>>>;
 
 enum Msg {
     ReallocChannel(spsc::Receiver<Msg>),
