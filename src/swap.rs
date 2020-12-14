@@ -41,14 +41,14 @@ impl<T> Swap<T> {
             .generation
             .set(self.generation.get());
         self.send
-            .set(self.shared.swap(self.send.get(), Ordering::Relaxed));
+            .set(self.shared.swap(self.send.get(), Ordering::Release));
     }
 
     /// Update the value exposed by `recv`. Returns whether new data was obtained. Consumer only.
     pub fn refresh(&self) -> bool {
         let generation = self.slots[self.recv.get()].generation.get();
         self.recv
-            .set(self.shared.swap(self.recv.get(), Ordering::Relaxed));
+            .set(self.shared.swap(self.recv.get(), Ordering::Acquire));
         let new_gen = self.slots[self.recv.get()].generation.get();
         if new_gen <= generation {
             // Outdated value, roll back
