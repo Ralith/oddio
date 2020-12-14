@@ -6,7 +6,6 @@ use std::{
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 const DURATION_SECS: u32 = 6;
-const BUFFER_SIZE_MS: u32 = 100;
 
 fn main() {
     let host = cpal::default_host();
@@ -17,7 +16,7 @@ fn main() {
     let config = cpal::StreamConfig {
         channels: 2,
         sample_rate,
-        buffer_size: cpal::BufferSize::Fixed(sample_rate.0 / (1000 / BUFFER_SIZE_MS)),
+        buffer_size: cpal::BufferSize::Default,
     };
     let boop = oddio::Frames::from_iter(
         sample_rate.0,
