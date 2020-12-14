@@ -1,4 +1,4 @@
-use crate::{split_stereo, Sample, StridedMut};
+use crate::{split_stereo, Gain, Sample, StridedMut};
 
 /// An audio signal with a cursor
 ///
@@ -42,6 +42,14 @@ pub trait Source {
         Self: Source<Frame = Sample> + Sized,
     {
         MonoToStereo(self)
+    }
+
+    /// Apply a dynamic gain control
+    fn with_gain(self) -> Gain<Self>
+    where
+        Self: Sized,
+    {
+        Gain::new(self)
     }
 }
 

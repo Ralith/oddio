@@ -10,6 +10,9 @@ pub trait Frame {
 
     /// Mix with `other`
     fn mix(&self, other: &Self) -> Self;
+
+    /// Scale by `factor`
+    fn scale(&self, factor: f32) -> Self;
 }
 
 impl Frame for Sample {
@@ -24,6 +27,11 @@ impl Frame for Sample {
     fn mix(&self, other: &Sample) -> Sample {
         self + other
     }
+
+    #[inline]
+    fn scale(&self, factor: f32) -> Sample {
+        self * factor
+    }
 }
 
 impl Frame for [Sample; 2] {
@@ -37,5 +45,10 @@ impl Frame for [Sample; 2] {
     #[inline]
     fn mix(&self, other: &[Sample; 2]) -> [Sample; 2] {
         [self[0] + other[0], self[1] + other[1]]
+    }
+
+    #[inline]
+    fn scale(&self, factor: f32) -> [Sample; 2] {
+        [self[0] * factor, self[1] * factor]
     }
 }

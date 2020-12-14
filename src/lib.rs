@@ -30,6 +30,7 @@
 
 mod frame;
 mod frames;
+mod gain;
 mod math;
 mod mixer;
 mod source;
@@ -41,6 +42,7 @@ mod swap;
 
 pub use frame::Frame;
 pub use frames::*;
+pub use gain::Gain;
 pub use mixer::*;
 pub use source::*;
 pub use spatial::Spatial;
