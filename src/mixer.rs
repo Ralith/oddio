@@ -44,6 +44,8 @@ const INITIAL_CHANNEL_CAPACITY: usize = 3;
 const INITIAL_SOURCES_CAPACITY: usize = 4;
 
 /// Handle for controlling a [`Mixer`] from another thread
+///
+/// Constructed by calling [`mixer`].
 pub struct Remote<T> {
     sender: spsc::Sender<Msg<T>>,
     free: spsc::Receiver<Free<T>>,
@@ -58,7 +60,7 @@ impl<T> Remote<T> {
     ///
     /// Finished sources are automatically stopped, and their storage reused for future `play`
     /// calls.
-    pub fn play<S>(&mut self, source: S) -> Control<S>
+    pub fn play<S>(&mut self, source: S) -> Handle<S>
     where
         S: Source<Frame = T> + Send + 'static,
     {
@@ -78,7 +80,7 @@ impl<T> Remote<T> {
             inner: source.clone(),
         }));
         self.active_sources += 1;
-        Control { inner: source }
+        Handle { inner: source }
     }
 
     /// Send a message to the mixer, allocating more storage to do so if necessary
@@ -140,15 +142,15 @@ impl<T> Remote<T> {
 
 unsafe impl<T> Send for Remote<T> {}
 
-/// Handle for manipulating a source while it plays
-pub struct Control<T: ?Sized> {
+/// Handle for manipulating a source while it's played by a [`Mixer`]
+pub struct Handle<T: ?Sized> {
     inner: Arc<SourceData<T>>,
 }
 
 // Sound because `T` is not accessible through any safe interface unless `T: Sync`
-unsafe impl<T> Send for Control<T> {}
+unsafe impl<T> Send for Handle<T> {}
 
-impl<T> Control<T> {
+impl<T> Handle<T> {
     /// Stop playing the source, allowing it to be dropped on a future `play` invocation
     pub fn stop(&self) {
         self.inner.stop.store(true, Ordering::Relaxed);
@@ -162,13 +164,7 @@ impl<T> Control<T> {
     /// Access a potentially `!Sync` source
     ///
     /// Building block for safe abstractions over nontrivial shared memory.
-    pub fn get(&self) -> *const T {
-        &self.inner.source
-    }
-}
-
-impl<T: Sync> AsRef<T> for Control<T> {
-    fn as_ref(&self) -> &T {
+    pub(crate) fn get(&self) -> *const T {
         &self.inner.source
     }
 }
@@ -199,6 +195,8 @@ impl<T> Deref for Output<T> {
 }
 
 /// A [`Source`] that mixes a dynamic set of [`Source`]s, controlled by a [`Remote`]
+///
+/// Constructed by calling [`mixer`].
 pub struct Mixer<T>(UnsafeCell<MixerInner<T>>);
 
 struct MixerInner<T> {
@@ -305,7 +303,7 @@ enum Msg<T> {
     Play(Output<T>),
 }
 
-/// State shared between [`Control`] and [`Output`]
+/// State shared between [`Handle`] and [`Output`]
 struct SourceData<S: ?Sized> {
     stop: AtomicBool,
     source: S,

@@ -22,5 +22,5 @@ let frames = oddio::FramesSource::from(oddio::Frames::from_slice(sample_rate, &f
 let mut handle = remote.play(oddio::Spatial::new(frames, position, velocity));
 
 // When position/velocity changes:
-handle.set_motion(position, velocity);
+handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
 ```

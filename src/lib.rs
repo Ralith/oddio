@@ -18,7 +18,7 @@
 //! let mut handle = remote.play(oddio::Spatial::new(frames, position, velocity));
 //!
 //! // When position/velocity changes:
-//! handle.set_motion(position, velocity);
+//! handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
 //! ```
 //!
 //! Key primitives:
@@ -28,6 +28,7 @@
 
 #![warn(missing_docs)]
 
+mod filter;
 mod frame;
 mod frames;
 mod gain;
@@ -40,6 +41,7 @@ mod stream;
 pub mod strided;
 mod swap;
 
+pub use filter::*;
 pub use frame::Frame;
 pub use frames::*;
 pub use gain::Gain;

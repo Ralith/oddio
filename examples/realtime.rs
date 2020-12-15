@@ -54,7 +54,7 @@ fn main() {
         .unwrap();
     stream.play().unwrap();
 
-    let mut source = remote.play(source);
+    let source = remote.play(source);
 
     let start = Instant::now();
 
@@ -67,7 +67,7 @@ fn main() {
         // This is in principle a no-op because the velocity isn't changing, but due to imprecise
         // sleep times and the fact that the audio thread runs at unaligned intervals means that the
         // this would produce glitches if not for smoothing done by `Spatial`.
-        source.set_motion(
+        source.control::<oddio::Spatial<_>, _>().set_motion(
             [-speed + speed * dt.as_secs_f32(), 10.0, 0.0].into(),
             [speed, 0.0, 0.0].into(),
         );
