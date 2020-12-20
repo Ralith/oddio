@@ -7,8 +7,7 @@ use std::{
 ///
 /// Useful for custom controllable sources.
 pub struct Swap<T> {
-    slots: [Slot<T>; 3],
-    generation: Cell<u64>,
+    slots: [UnsafeCell<T>; 3],
     send: Cell<usize>,
     shared: AtomicUsize,
     recv: Cell<usize>,
@@ -21,8 +20,11 @@ impl<T> Swap<T> {
         T: Clone,
     {
         Self {
-            slots: [Slot::new(x.clone()), Slot::new(x.clone()), Slot::new(x)],
-            generation: Cell::new(0),
+            slots: [
+                UnsafeCell::new(x.clone()),
+                UnsafeCell::new(x.clone()),
+                UnsafeCell::new(x),
+            ],
             send: Cell::new(0),
             shared: AtomicUsize::new(1),
             recv: Cell::new(2),
@@ -31,32 +33,26 @@ impl<T> Swap<T> {
 
     /// Access the value that will be sent next. Producer only.
     pub fn pending(&self) -> *mut T {
-        self.slots[self.send.get()].value.get()
+        self.slots[self.send.get()].get()
     }
 
     /// Send the value from `pending`. Producer only.
     pub fn flush(&self) {
-        self.generation.set(self.generation.get() + 1);
-        self.slots[self.send.get()]
-            .generation
-            .set(self.generation.get());
-        self.send
-            .set(self.shared.swap(self.send.get(), Ordering::Release));
+        self.send.set(
+            self.shared
+                .swap(self.send.get() | FRESH_BIT, Ordering::Release),
+        );
     }
 
     /// Update the value exposed by `recv`. Returns whether new data was obtained. Consumer only.
     pub fn refresh(&self) -> bool {
-        let generation = self.slots[self.recv.get()].generation.get();
-        self.recv
-            .set(self.shared.swap(self.recv.get(), Ordering::Acquire));
-        let new_gen = self.slots[self.recv.get()].generation.get();
-        if new_gen <= generation {
+        let shared = self.shared.swap(self.recv.get(), Ordering::Acquire);
+        self.recv.set(shared & INDEX_MASK);
+        if shared & FRESH_BIT == 0 {
             // Outdated value, roll back
-            self.recv
-                .set(self.shared.swap(self.recv.get(), Ordering::Relaxed));
-            let new_gen = self.slots[self.recv.get()].generation.get();
-            debug_assert!(new_gen >= generation);
-            new_gen > generation
+            let shared = self.shared.swap(self.recv.get(), Ordering::Relaxed);
+            self.recv.set(shared & INDEX_MASK);
+            shared & FRESH_BIT != 0
         } else {
             true
         }
@@ -64,23 +60,12 @@ impl<T> Swap<T> {
 
     /// Access the most recent data as of the last `refresh` call. Consumer only.
     pub fn received(&self) -> *mut T {
-        self.slots[self.recv.get()].value.get()
+        self.slots[self.recv.get()].get()
     }
 }
 
-struct Slot<T> {
-    value: UnsafeCell<T>,
-    generation: Cell<u64>,
-}
-
-impl<T> Slot<T> {
-    fn new(x: T) -> Self {
-        Self {
-            value: UnsafeCell::new(x),
-            generation: Cell::new(0),
-        }
-    }
-}
+const FRESH_BIT: usize = 0b100;
+const INDEX_MASK: usize = 0b011;
 
 #[cfg(test)]
 mod tests {
