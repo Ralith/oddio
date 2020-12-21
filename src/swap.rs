@@ -46,16 +46,12 @@ impl<T> Swap<T> {
 
     /// Update the value exposed by `recv`. Returns whether new data was obtained. Consumer only.
     pub fn refresh(&self) -> bool {
-        let shared = self.shared.swap(self.recv.get(), Ordering::Acquire);
-        self.recv.set(shared & INDEX_MASK);
-        if shared & FRESH_BIT == 0 {
-            // Outdated value, roll back
-            let shared = self.shared.swap(self.recv.get(), Ordering::Relaxed);
-            self.recv.set(shared & INDEX_MASK);
-            shared & FRESH_BIT != 0
-        } else {
-            true
+        if self.shared.load(Ordering::Relaxed) & FRESH_BIT == 0 {
+            return false;
         }
+        self.recv
+            .set(self.shared.swap(self.recv.get(), Ordering::Acquire) & INDEX_MASK);
+        true
     }
 
     /// Access the most recent data as of the last `refresh` call. Consumer only.
