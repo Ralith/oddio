@@ -40,7 +40,7 @@ impl<T> Swap<T> {
     pub fn flush(&self) {
         self.send.set(
             self.shared
-                .swap(self.send.get() | FRESH_BIT, Ordering::Release),
+                .swap(self.send.get() | FRESH_BIT, Ordering::AcqRel),
         );
     }
 
@@ -50,7 +50,7 @@ impl<T> Swap<T> {
             return false;
         }
         self.recv
-            .set(self.shared.swap(self.recv.get(), Ordering::Acquire) & INDEX_MASK);
+            .set(self.shared.swap(self.recv.get(), Ordering::AcqRel) & INDEX_MASK);
         true
     }
 
