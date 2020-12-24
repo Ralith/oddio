@@ -60,6 +60,17 @@ impl<T> Swap<T> {
     }
 }
 
+impl<T: Default> Default for Swap<T> {
+    fn default() -> Self {
+        Self {
+            slots: Default::default(),
+            send: Cell::new(0),
+            shared: AtomicUsize::new(1),
+            recv: Cell::new(2),
+        }
+    }
+}
+
 const FRESH_BIT: usize = 0b100;
 const INDEX_MASK: usize = 0b011;
 
