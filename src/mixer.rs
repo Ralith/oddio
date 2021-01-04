@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use crate::{set, ErasedSource, Frame, Handle, Set, SetHandle, Source, StridedMut};
 
-/// Build a remote/mixer pair
+/// Build a mixer and a handle for controlling it
 pub fn mixer<T: Frame + Copy>() -> (MixerHandle<T>, Mixer<T>) {
     let (handle, set) = set();
     (

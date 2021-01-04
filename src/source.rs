@@ -17,7 +17,7 @@ pub trait Source {
 
     /// Sample a period of `sample_length * out.len()` seconds starting at `offset` from the cursor.
     ///
-    /// `sample_length` and `offset` may be negative. Output is written at intervals of `stride`.
+    /// `sample_length` and `offset` may be negative.
     fn sample(&self, offset: f32, sample_length: f32, out: StridedMut<'_, Self::Frame>);
 
     /// Advance time by `dt` seconds
@@ -28,7 +28,8 @@ pub trait Source {
     ///
     /// Note that this method takes `&self`, even though side-effects are expected. Implementers are
     /// expected to rely on interior mutability. This allows `Source`s to be accessed while playing
-    /// via [`Control`](crate::Control), permitting real-time control with e.g. atomics.
+    /// via [`Handle::control`](crate::Handle::control), permitting real-time control with
+    /// e.g. atomics.
     fn advance(&self, dt: f32);
 
     /// Seconds until data runs out

@@ -7,6 +7,7 @@ Oddio is a game-oriented audio library that is:
 - **Real-time**: Audio output is efficient and wait-free: no glitches until you run out of CPU
 - **3D**: Spatialization with doppler effects and propagation delay available out of the box
 - **Extensible**: Implement `Source` for custom streaming synthesis and filtering
+- **Composable**: `Source`s can be transformed without obstructing the inner `Source`'s controls
 
 ### Example
 

@@ -2,7 +2,10 @@ use std::marker::PhantomData;
 
 use crate::Handle;
 
-/// A [`Source`](crate::Source) which transforms another source
+/// A wrapper which transforms a [`Source`](crate::Source)
+///
+/// Allows [`Handle::control`] to expose the transformed source as well as the transformer. For
+/// example, a `Handle<Spatial<Gain<_>>>` allows both gain and motion state to be updated.
 pub trait Filter {
     /// Type of source transformed by this filter
     type Inner;
@@ -11,7 +14,7 @@ pub trait Filter {
     fn inner(&self) -> &Self::Inner;
 }
 
-/// A [`Source`] that can be safely controlled from another thread
+/// A [`Source`] or transformer that can be safely controlled from another thread
 ///
 /// # Safety
 ///
@@ -52,16 +55,17 @@ impl<T> Handle<T> {
 
 /// Filter chains that contain a `T` at any position
 ///
-/// `Index` is [`Here`] or [`There`], and can generally be inferred.
+/// Helper trait for [`Handle::control()`]. `Index` is [`Here`] or [`There`], and can generally be
+/// inferred.
 pub trait FilterHaving<T, Index> {
     /// Get the `T` element of a filter chain
     fn get(&self) -> &T;
 }
 
-/// `Index` value for `FilterHaving` representing the first filter in the chain
+/// `Index` value for [`FilterHaving`] representing the first filter in the chain
 pub struct Here(());
 
-/// `Index` value for `FilterHaving` representing the filter at position `T+1`
+/// `Index` value for [`FilterHaving`] representing the filter at position `T+1`
 pub struct There<T>(PhantomData<T>);
 
 impl<T> FilterHaving<T, Here> for T {
