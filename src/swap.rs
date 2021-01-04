@@ -40,7 +40,8 @@ impl<T> Swap<T> {
     pub fn flush(&self) {
         self.send.set(
             self.shared
-                .swap(self.send.get() | FRESH_BIT, Ordering::AcqRel),
+                .swap(self.send.get() | FRESH_BIT, Ordering::AcqRel)
+                & INDEX_MASK,
         );
     }
 
