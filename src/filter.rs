@@ -11,8 +11,25 @@ pub trait Filter {
     fn inner(&self) -> &Self::Inner;
 }
 
+/// A [`Source`] that can be safely controlled from another thread
+///
+/// # Safety
+///
+/// `make_control` and `Control` must not permit access to `&Self` that constitutes a data race with
+/// concurrent invocation of any [`Source`] method even if `Self: !Sync`. For example, an
+/// implementation could restrict itself to atomic operations.
+///
+/// [`Source`]: crate::Source
+pub unsafe trait Controlled<'a>: Sized + 'a {
+    /// The interface through which this source can be safely controlled
+    type Control;
+
+    /// Construct a `Control` for `source`
+    fn make_control(source: &'a Self) -> Self::Control;
+}
+
 impl<T> Handle<T> {
-    /// Get the control for source `S` in a chain of sources
+    /// Get the control for [`Controlled`] source `S` in a chain of sources
     ///
     /// `Index` can usually be inferred.
     ///
@@ -23,31 +40,13 @@ impl<T> Handle<T> {
     ///     source.control::<Gain<_>, _>().set_gain(0.5);
     /// }
     /// ```
-    pub fn control<S, Index>(&self) -> Control<'_, S>
+    pub fn control<'a, S, Index>(&'a self) -> S::Control
     where
         T: FilterHaving<S, Index>,
+        S: Controlled<'a>,
     {
-        unsafe { Control(&(*self.get()).get()) }
-    }
-}
-
-/// Control for a specific element of a chain of sources
-///
-/// Obtained from [`Handle::control`].
-pub struct Control<'a, T>(&'a T);
-
-impl<T> Control<'_, T> {
-    /// Access a potentially `!Sync` source
-    ///
-    /// Building block for safe abstractions over nontrivial shared memory.
-    pub fn get(&self) -> *const T {
-        self.0
-    }
-}
-
-impl<T: Sync> AsRef<T> for Control<'_, T> {
-    fn as_ref(&self) -> &T {
-        self.0
+        let source: &S = unsafe { (*self.get()).get() };
+        S::make_control(source)
     }
 }
 
