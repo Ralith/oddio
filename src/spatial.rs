@@ -5,7 +5,7 @@ use crate::{
     math::{add, dot, mix, norm, scale, sub},
     split_stereo,
     swap::Swap,
-    Control, Filter, Sample, Source, StridedMut,
+    Controlled, Filter, Sample, Source, StridedMut,
 };
 
 /// Places a mono source at an adjustable position and velocity wrt. the listener
@@ -122,13 +122,23 @@ impl<T> Filter for Spatial<T> {
     }
 }
 
-impl<T> Control<'_, Spatial<T>> {
+pub struct SpatialControl<'a, T>(&'a Spatial<T>);
+
+unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
+    type Control = SpatialControl<'a, T>;
+
+    fn make_control(source: &'a Spatial<T>) -> Self::Control {
+        SpatialControl(source)
+    }
+}
+
+impl<'a, T> SpatialControl<'a, T> {
     /// Update the position and velocity of the source
     pub fn set_motion(&mut self, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) {
         unsafe {
-            *(*self.get()).motion.pending() = Motion { position, velocity };
-            (*self.get()).motion.flush();
+            *self.0.motion.pending() = Motion { position, velocity };
         }
+        self.0.motion.flush();
     }
 }
 

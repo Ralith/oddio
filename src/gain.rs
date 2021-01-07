@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{Control, Filter, Frame, Source, StridedMut};
+use crate::{Controlled, Filter, Frame, Source, StridedMut};
 
 /// Scales amplitude by a dynamically-adjustable factor
 pub struct Gain<T: ?Sized> {
@@ -49,18 +49,24 @@ impl<T> Filter for Gain<T> {
     }
 }
 
-impl<T> Control<'_, Gain<T>> {
+pub struct GainControl<'a, T>(&'a Gain<T>);
+
+unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
+    type Control = GainControl<'a, T>;
+
+    fn make_control(source: &'a Gain<T>) -> Self::Control {
+        GainControl(source)
+    }
+}
+
+impl<'a, T> GainControl<'a, T> {
     /// Get the current gain
     pub fn gain(&self) -> f32 {
-        unsafe { f32::from_bits((*self.get()).gain.load(Ordering::Relaxed)) }
+        f32::from_bits(self.0.gain.load(Ordering::Relaxed))
     }
 
     /// Adjust the gain
     pub fn set_gain(&mut self, factor: f32) {
-        unsafe {
-            (*self.get())
-                .gain
-                .store(factor.to_bits(), Ordering::Relaxed);
-        }
+        self.0.gain.store(factor.to_bits(), Ordering::Relaxed);
     }
 }
