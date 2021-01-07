@@ -2,6 +2,12 @@ use crate::{split_stereo, Gain, Sample, StridedMut};
 
 /// An audio signal with a cursor
 ///
+/// This interface is intended for use only from the code actually generating an audio signal for
+/// output. For example, in a real-time application, `Source`s will typically be owned by the
+/// real-time audio thread and not directly accessible from elsewhere. Access to an active source
+/// for other purposes (e.g. to adjust parameters) is generally through [`Handle`](crate::Handle),
+/// using source-specific interfaces that implement wait-free inter-thread communication.
+///
 /// To ensure glitch-free audio, none of these methods should perform any operation that may
 /// wait. This includes locks, memory allocation or freeing, and even unbounded compare-and-swap
 /// loops.
