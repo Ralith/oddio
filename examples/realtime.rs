@@ -29,13 +29,7 @@ fn main() {
 
     let speed = 50.0;
 
-    let source = oddio::Spatial::new(
-        oddio::FramesSource::from(boop),
-        [-speed, 10.0, 0.0].into(),
-        [speed, 0.0, 0.0].into(),
-    );
-
-    let (mut remote, mixer) = oddio::mixer();
+    let (mut scene_handle, scene) = oddio::spatial();
 
     let stream = device
         .build_output_stream(
@@ -45,7 +39,7 @@ fn main() {
                 for s in &mut frames[..] {
                     *s = [0.0, 0.0];
                 }
-                oddio::run(&mixer, sample_rate.0, frames);
+                oddio::run(&scene, sample_rate.0, frames);
             },
             move |err| {
                 eprintln!("{}", err);
@@ -54,7 +48,11 @@ fn main() {
         .unwrap();
     stream.play().unwrap();
 
-    let source = remote.play(source);
+    let source = scene_handle.play(
+        oddio::FramesSource::from(boop),
+        [-speed, 10.0, 0.0].into(),
+        [speed, 0.0, 0.0].into(),
+    );
 
     let start = Instant::now();
 
