@@ -1,57 +1,105 @@
-use std::cell::UnsafeCell;
-use std::ops::{Index, IndexMut};
-
-use crate::{
-    math::{add, dot, mix, norm, scale, sub},
-    split_stereo,
-    swap::Swap,
-    Controlled, Filter, Sample, Source, StridedMut,
+use std::{
+    cell::RefCell,
+    ops::{Index, IndexMut},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
-/// Places a mono source at an adjustable position and velocity wrt. the listener
+use crate::{
+    handle::SourceData,
+    math::{add, dot, mix, norm, scale, sub},
+    set::{set, Set, SetHandle},
+    split_stereo,
+    swap::Swap,
+    Controlled, Filter, Frame, Handle, Sample, Source, StridedMut,
+};
+
+/// Create a [`Source`] for spatializing mono sources for stereo output
 ///
-/// The listener faces directly along the -Z axis, with +X to the right.
+/// The scene can be controlled through [`SpatialSceneHandle`], and the resulting audio is produced by
+/// the [`SpatialScene`] [`Source`].
+pub fn spatial() -> (SpatialSceneHandle, SpatialScene) {
+    let (handle, set) = set();
+    (
+        SpatialSceneHandle { set: handle },
+        SpatialScene(RefCell::new(Inner {
+            set,
+            buffer: vec![[0.0f32; 2]; 1024].into(),
+        })),
+    )
+}
+
+/// Handle for adding sources to a spatial scene
+pub struct SpatialSceneHandle {
+    set: SetHandle<ErasedSpatial>,
+}
+
+type ErasedSpatial = Arc<SourceData<Spatial<dyn Source<Frame = Sample> + Send>>>;
+
+impl SpatialSceneHandle {
+    /// Begin playing `source` at `position`, moving at `velocity`
+    ///
+    /// Returns a [`Handle`] that can be used to adjust the source's movement in the future, and
+    /// access other controls.
+    pub fn play<S>(
+        &mut self,
+        source: S,
+        position: mint::Point3<f32>,
+        velocity: mint::Vector3<f32>,
+    ) -> Handle<Spatial<S>>
+    where
+        S: Source<Frame = Sample> + Send + 'static,
+    {
+        let source = Spatial::new(source, position, velocity);
+        let handle = Handle {
+            shared: Arc::new(SourceData {
+                stop: AtomicBool::new(false),
+                source,
+            }),
+        };
+        self.set.insert(handle.shared.clone());
+        handle
+    }
+}
+
+/// An individual spatialized source
 pub struct Spatial<T: ?Sized> {
     motion: Swap<Motion>,
-    state: UnsafeCell<State>,
+    state: RefCell<State>,
     inner: T,
 }
 
 impl<T> Spatial<T> {
-    /// Construct a spatial source with an initial position and velocity
-    pub fn new(inner: T, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
+    fn new(inner: T, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
         Self {
-            inner,
             motion: Swap::new(Motion { position, velocity }),
-            state: UnsafeCell::new(State {
-                prev_position: position,
-                dt: 0.0,
-            }),
+            state: RefCell::new(State::new(position)),
+            inner,
         }
     }
 }
 
-impl<T> Source for Spatial<T>
+impl<T> Spatial<T>
 where
-    T: Source<Frame = Sample>,
+    T: ?Sized + Source<Frame = Sample>,
 {
-    type Frame = [Sample; 2];
-
     fn sample(&self, offset: f32, world_dt: f32, mut out: StridedMut<'_, [Sample; 2]>) {
         let prev_position;
         let next_position;
         unsafe {
+            let mut state = self.state.borrow_mut();
+
             // Update motion
             let orig_next = *self.motion.received();
             if self.motion.refresh() {
-                let state = &mut *self.state.get();
                 state.prev_position = state.smoothed_position(0.0, &orig_next);
                 state.dt = 0.0;
             } else {
                 debug_assert_eq!(orig_next.position, (*self.motion.received()).position);
             }
 
-            let state = &*self.state.get();
             prev_position = state.smoothed_position(offset, &*self.motion.received());
             next_position = state.smoothed_position(
                 offset + world_dt * out.len() as f32,
@@ -90,18 +138,16 @@ where
     }
 
     fn advance(&self, dt: f32) {
-        unsafe {
-            let state = &mut *self.state.get();
-            state.dt += dt;
-        }
+        let mut state = self.state.borrow_mut();
+        state.dt += dt;
         self.inner.advance(dt);
     }
 
     fn remaining(&self) -> f32 {
-        let position = unsafe {
-            let state = &mut *self.state.get();
-            state.smoothed_position(0.0, &*self.motion.received())
-        };
+        let position = self
+            .state
+            .borrow()
+            .smoothed_position(0.0, unsafe { &*self.motion.received() });
         let distance = norm(position.into());
         self.inner.remaining() + distance / SPEED_OF_SOUND
     }
@@ -114,6 +160,7 @@ impl<T> Filter for Spatial<T> {
     }
 }
 
+/// Control for updating the motion of a spatial source
 pub struct SpatialControl<'a, T>(&'a Spatial<T>);
 
 unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
@@ -134,6 +181,67 @@ impl<'a, T> SpatialControl<'a, T> {
     }
 }
 
+/// [`Source`] for stereo output from a spatial scene, created by [`spatial`]
+pub struct SpatialScene(RefCell<Inner>);
+
+struct Inner {
+    set: Set<ErasedSpatial>,
+    buffer: Box<[[Sample; 2]]>,
+}
+
+impl Source for SpatialScene {
+    type Frame = [Sample; 2];
+
+    fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, [Sample; 2]>) {
+        let this = &mut *self.0.borrow_mut();
+        this.set.update();
+
+        for o in &mut out {
+            *o = [0.0; 2];
+        }
+
+        for i in (0..this.set.len()).rev() {
+            let data = &this.set[i];
+            if data.source.remaining() < 0.0 {
+                data.stop.store(true, Ordering::Relaxed);
+            }
+            if data.stop.load(Ordering::Relaxed) {
+                this.set.remove(i);
+                continue;
+            }
+
+            // Sample into `buffer`, then mix into `out`
+            let mut iter = out.iter_mut();
+            let mut i = 0;
+            while iter.len() > 0 {
+                let n = iter.len().min(this.buffer.len());
+                let staging = &mut this.buffer[..n];
+                data.source.sample(
+                    offset + i as f32 * sample_duration,
+                    sample_duration,
+                    staging.into(),
+                );
+                for (staged, o) in staging.iter().zip(&mut iter) {
+                    *o = o.mix(staged);
+                }
+                i += n;
+            }
+        }
+    }
+
+    fn advance(&self, dt: f32) {
+        let this = self.0.borrow();
+        for data in this.set.iter() {
+            data.source.advance(dt);
+        }
+    }
+
+    #[inline]
+    fn remaining(&self) -> f32 {
+        f32::INFINITY
+    }
+}
+
 #[derive(Copy, Clone)]
 struct Motion {
     position: mint::Point3<f32>,
@@ -148,6 +256,13 @@ struct State {
 }
 
 impl State {
+    fn new(position: mint::Point3<f32>) -> Self {
+        Self {
+            prev_position: position,
+            dt: 0.0,
+        }
+    }
+
     fn smoothed_position(&self, offset: f32, next: &Motion) -> mint::Point3<f32> {
         let dt = self.dt + offset;
         let position_change = scale(next.velocity, dt);

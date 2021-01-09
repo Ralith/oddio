@@ -1,13 +1,13 @@
 //! Lightweight game audio
 //!
 //! ```no_run
-//! let (mut remote, mixer) = oddio::mixer();
+//! let (mut scene_handle, scene) = oddio::spatial();
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];
 //! # let output_sample_rate = 44100;
 //! let out_frames = oddio::frame_stereo(data);
-//! oddio::run(&mixer, output_sample_rate, out_frames);
+//! oddio::run(&scene, output_sample_rate, out_frames);
 //!
 //! // In game logic:
 //! # let frames = [];
@@ -15,7 +15,7 @@
 //! # let position = [0.0, 0.0, 0.0].into();
 //! # let velocity = [0.0, 0.0, 0.0].into();
 //! let frames = oddio::FramesSource::from(oddio::Frames::from_slice(sample_rate, &frames));
-//! let mut handle = remote.play(oddio::Spatial::new(frames, position, velocity));
+//! let mut handle = scene_handle.play(frames, position, velocity);
 //!
 //! // When position/velocity changes:
 //! handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
@@ -51,7 +51,7 @@ pub use handle::*;
 pub use mixer::*;
 use set::*;
 pub use source::*;
-pub use spatial::Spatial;
+pub use spatial::*;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use strided::StridedMut;
 pub use swap::Swap;

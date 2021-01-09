@@ -14,18 +14,16 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let boop = oddio::Spatial::new(
+    let (mut scene_handle, scene) = oddio::spatial();
+    scene_handle.play(
         oddio::FramesSource::from(boop),
         [-SPEED, 10.0, 0.0].into(),
         [SPEED, 0.0, 0.0].into(),
     );
 
-    let (mut remote, mixer) = oddio::mixer();
-    remote.play(boop);
-
     let mut frames = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
     for chunk in frames.chunks_mut(FRAME_SIZE) {
-        oddio::run(&mixer, RATE, chunk);
+        oddio::run(&scene, RATE, chunk);
     }
 
     let track = wav::BitDepth::Sixteen(
