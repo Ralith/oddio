@@ -24,6 +24,7 @@
 //! Key primitives:
 //! - [`Frames`] stores static audio data, which can be played with a [`FramesSource`]
 //! - [`Mixer`] allows multiple sources to be played concurrently and controlled during playback
+//! - [`SpatialScene`] is a mixer that spatializes its sources
 //! - [`run`] writes frames from a [`Source`] into an output buffer
 
 #![warn(missing_docs)]
