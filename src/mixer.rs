@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use crate::{set, ErasedSource, Frame, Handle, Set, SetHandle, Source, StridedMut};
+use crate::{set, ErasedSource, Frame, Handle, Set, SetHandle, Source};
 
 /// Build a mixer and a handle for controlling it
 pub fn mixer<T: Frame + Copy>() -> (MixerHandle<T>, Mixer<T>) {
@@ -47,11 +47,11 @@ struct Inner<T> {
 impl<T: Frame> Source for Mixer<T> {
     type Frame = T;
 
-    fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, Self::Frame>) {
+    fn sample(&self, offset: f32, sample_duration: f32, out: &mut [T]) {
         let this = &mut *self.0.borrow_mut();
         this.set.update();
 
-        for o in &mut out {
+        for o in out.iter_mut() {
             *o = T::ZERO;
         }
 
@@ -74,7 +74,7 @@ impl<T: Frame> Source for Mixer<T> {
                 source.sample(
                     offset + i as f32 * sample_duration,
                     sample_duration,
-                    staging.into(),
+                    staging,
                 );
                 for (staged, o) in staging.iter().zip(&mut iter) {
                     *o = o.mix(staged);

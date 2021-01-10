@@ -11,9 +11,8 @@ use crate::{
     handle::SourceData,
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub},
     set::{set, Set, SetHandle},
-    split_stereo,
     swap::Swap,
-    Controlled, Filter, Frame, Handle, Sample, Source, StridedMut,
+    Controlled, Filter, Frame, Handle, Sample, Source,
 };
 
 /// Create a [`Source`] for spatializing mono sources for stereo output
@@ -33,7 +32,7 @@ pub fn spatial() -> (SpatialSceneHandle, SpatialScene) {
         },
         SpatialScene(RefCell::new(Inner {
             set,
-            buffer: vec![[0.0f32; 2]; 1024].into(),
+            buffer: vec![0.0f32; 1024 * 2].into(),
             rot,
         })),
     )
@@ -113,7 +112,7 @@ where
         rot: &mint::Quaternion<f32>,
         offset: f32,
         world_dt: f32,
-        mut out: StridedMut<'_, [Sample; 2]>,
+        mut out: [&mut [Sample]; 2],
     ) {
         let prev_position;
         let next_position;
@@ -136,7 +135,7 @@ where
             next_position = rotate(
                 rot,
                 &state.smoothed_position(
-                    offset + world_dt * out.len() as f32,
+                    offset + world_dt * out[0].len() as f32,
                     &*self.motion.received(),
                 ),
             );
@@ -147,7 +146,7 @@ where
         let mut dt = [0.0; 2];
         let mut initial_attenuation = [0.0; 2];
         let mut attenuation_change = [0.0; 2];
-        let recip_samples = 1.0 / out.len() as f32;
+        let recip_samples = 1.0 / out[0].len() as f32;
         for &ear in [Ear::Left, Ear::Right].iter() {
             let prev_state = EarState::new(prev_position, ear);
             t0[ear] = prev_state.offset + offset;
@@ -159,14 +158,13 @@ where
         }
 
         // Sample
-        let mut bufs = split_stereo(&mut out);
         for &ear in [Ear::Left, Ear::Right].iter() {
-            self.inner.sample(t0[ear], dt[ear], bufs[ear].borrow());
+            self.inner.sample(t0[ear], dt[ear], out[ear]);
         }
 
         // Fix up amplitude
         for &ear in [Ear::Left, Ear::Right].iter() {
-            for (t, o) in bufs[ear].iter_mut().enumerate() {
+            for (t, o) in out[ear].iter_mut().enumerate() {
                 *o *= initial_attenuation[ear] + t as f32 * attenuation_change[ear];
             }
         }
@@ -223,14 +221,14 @@ unsafe impl Send for SpatialScene {}
 
 struct Inner {
     set: Set<ErasedSpatial>,
-    buffer: Box<[[Sample; 2]]>,
+    buffer: Box<[Sample]>,
     rot: Arc<Swap<mint::Quaternion<f32>>>,
 }
 
 impl Source for SpatialScene {
     type Frame = [Sample; 2];
 
-    fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, [Sample; 2]>) {
+    fn sample(&self, offset: f32, sample_duration: f32, out: &mut [[Sample; 2]]) {
         let this = &mut *self.0.borrow_mut();
         this.set.update();
         let (mut prev_rot, rot) = unsafe {
@@ -239,7 +237,7 @@ impl Source for SpatialScene {
             (prev, *this.rot.received())
         };
 
-        for o in &mut out {
+        for o in out.iter_mut() {
             *o = [0.0; 2];
         }
 
@@ -257,17 +255,17 @@ impl Source for SpatialScene {
             let mut iter = out.iter_mut();
             let mut i = 0;
             while iter.len() > 0 {
-                let n = iter.len().min(this.buffer.len());
-                let staging = &mut this.buffer[..n];
+                let n = iter.len().min(this.buffer.len() / 2);
+                let (l, r) = this.buffer[..n * 2].split_at_mut(n);
                 data.source.sample(
                     &prev_rot,
                     &rot,
                     offset + i as f32 * sample_duration,
                     sample_duration,
-                    staging.into(),
+                    [l, r],
                 );
-                for (staged, o) in staging.iter().zip(&mut iter) {
-                    *o = o.mix(staged);
+                for ((&l, &r), o) in l.iter().zip(r.iter()).zip(&mut iter) {
+                    *o = o.mix(&[l, r]);
                 }
                 i += n;
                 prev_rot = rot;

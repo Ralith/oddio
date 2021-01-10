@@ -40,7 +40,6 @@ mod source;
 mod spatial;
 mod spsc;
 mod stream;
-pub mod strided;
 mod swap;
 
 pub use filter::*;
@@ -53,7 +52,6 @@ use set::*;
 pub use source::*;
 pub use spatial::*;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
-pub use strided::StridedMut;
 pub use swap::Swap;
 
 /// Unitless instantaneous sound wave amplitude measurement
@@ -64,7 +62,7 @@ pub type Sample = f32;
 /// Convenience wrapper around the [`Source`] interface.
 pub fn run<S: Source>(source: &S, sample_rate: u32, out: &mut [S::Frame]) {
     let sample_len = 1.0 / sample_rate as f32;
-    source.sample(0.0, sample_len, out.into());
+    source.sample(0.0, sample_len, out);
     source.advance(sample_len * out.len() as f32);
 }
 
@@ -73,15 +71,6 @@ pub fn frame_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {
     unsafe { std::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() / 2) }
 }
 
-fn split_stereo<'a>(xs: &'a mut StridedMut<'_, [Sample; 2]>) -> [StridedMut<'a, Sample>; 2] {
-    unsafe {
-        [
-            StridedMut::from_raw_parts(xs.as_ptr().cast(), xs.stride() * 2, xs.len()),
-            StridedMut::from_raw_parts(
-                xs.as_ptr().cast::<Sample>().add(1),
-                xs.stride() * 2,
-                xs.len(),
-            ),
-        ]
-    }
+fn flatten_stereo(xs: &mut [[Sample; 2]]) -> &mut [Sample] {
+    unsafe { std::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() * 2) }
 }

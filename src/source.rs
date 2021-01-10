@@ -1,4 +1,4 @@
-use crate::{split_stereo, Gain, Sample, StridedMut};
+use crate::{flatten_stereo, Gain, Sample};
 
 /// An audio signal with a cursor
 ///
@@ -18,7 +18,7 @@ pub trait Source {
     /// Sample a period of `sample_length * out.len()` seconds starting at `offset` from the cursor.
     ///
     /// `sample_length` and `offset` may be negative.
-    fn sample(&self, offset: f32, sample_length: f32, out: StridedMut<'_, Self::Frame>);
+    fn sample(&self, offset: f32, sample_length: f32, out: &mut [Self::Frame]);
 
     /// Advance time by `dt` seconds
     ///
@@ -66,11 +66,12 @@ pub struct MonoToStereo<T>(pub T);
 impl<T: Source<Frame = Sample>> Source for MonoToStereo<T> {
     type Frame = [Sample; 2];
 
-    fn sample(&self, dt: f32, offset: f32, mut out: StridedMut<'_, Self::Frame>) {
-        let [left, _] = split_stereo(&mut out);
-        self.0.sample(dt, offset, left);
-        for frame in &mut out {
-            frame[1] = frame[0];
+    fn sample(&self, dt: f32, offset: f32, out: &mut [[Sample; 2]]) {
+        let n = out.len();
+        let buf = flatten_stereo(out);
+        self.0.sample(dt, offset, &mut buf[..n]);
+        for i in (0..buf.len()).rev() {
+            buf[i] = buf[i / 2];
         }
     }
 
@@ -93,8 +94,8 @@ mod tests {
 
     impl Source for CountingSource {
         type Frame = Sample;
-        fn sample(&self, _: f32, _: f32, mut out: StridedMut<'_, Self::Frame>) {
-            for x in &mut out {
+        fn sample(&self, _: f32, _: f32, out: &mut [Sample]) {
+            for x in out {
                 let i = self.0.get();
                 *x = i as f32;
                 self.0.set(i + 1);

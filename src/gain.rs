@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{Controlled, Filter, Frame, Source, StridedMut};
+use crate::{Controlled, Filter, Frame, Source};
 
 /// Scales amplitude by a dynamically-adjustable factor
 pub struct Gain<T: ?Sized> {
@@ -24,11 +24,11 @@ where
 {
     type Frame = T::Frame;
 
-    fn sample(&self, offset: f32, sample_length: f32, mut out: StridedMut<'_, Self::Frame>) {
-        self.inner.sample(offset, sample_length, out.borrow());
+    fn sample(&self, offset: f32, sample_length: f32, out: &mut [T::Frame]) {
+        self.inner.sample(offset, sample_length, out);
         // Should we blend from the previous value?
         let gain = f32::from_bits(self.gain.load(Ordering::Relaxed));
-        for x in &mut out {
+        for x in out {
             *x = x.scale(gain);
         }
     }

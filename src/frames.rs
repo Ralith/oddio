@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Frame, Source, StridedMut};
+use crate::{Frame, Source};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -141,7 +141,7 @@ impl<T: Frame + Copy> Source for FramesSource<T> {
     type Frame = T;
 
     #[inline]
-    fn sample(&self, offset: f32, dt: f32, mut out: StridedMut<'_, T>) {
+    fn sample(&self, offset: f32, dt: f32, out: &mut [T]) {
         let s0 = (self.t.get() + f64::from(offset)) * self.data.rate;
         let ds = f64::from(dt) * self.data.rate;
         for (i, o) in out.iter_mut().enumerate() {
