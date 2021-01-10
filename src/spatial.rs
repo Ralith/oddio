@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     handle::SourceData,
-    math::{add, dot, mix, norm, scale, sub},
+    math::{add, dot, invert_quat, mix, norm, rotate, scale, sub},
     set::{set, Set, SetHandle},
     split_stereo,
     swap::Swap,
@@ -22,21 +22,28 @@ use crate::{
 /// the [`SpatialScene`] [`Source`].
 pub fn spatial() -> (SpatialSceneHandle, SpatialScene) {
     let (handle, set) = set();
+    let rot = Arc::new(Swap::new(mint::Quaternion {
+        s: 1.0,
+        v: [0.0; 3].into(),
+    }));
     (
-        SpatialSceneHandle { set: handle },
+        SpatialSceneHandle {
+            set: handle,
+            rot: rot.clone(),
+        },
         SpatialScene(RefCell::new(Inner {
             set,
             buffer: vec![[0.0f32; 2]; 1024].into(),
+            rot,
         })),
     )
 }
 
-/// Handle for adding sources to a spatial scene
+/// Handle for modifying a spatial scene
 pub struct SpatialSceneHandle {
     set: SetHandle<ErasedSpatial>,
+    rot: Arc<Swap<mint::Quaternion<f32>>>,
 }
-
-type ErasedSpatial = Arc<SourceData<Spatial<dyn Source<Frame = Sample> + Send>>>;
 
 impl SpatialSceneHandle {
     /// Begin playing `source` at `position`, moving at `velocity`
@@ -62,7 +69,22 @@ impl SpatialSceneHandle {
         self.set.insert(handle.shared.clone());
         handle
     }
+
+    /// Set the listener's rotation
+    ///
+    /// An unrotated listener faces -Z, with +X to the right and +Y up.
+    pub fn set_listener_rotation(&mut self, rotation: mint::Quaternion<f32>) {
+        let source_rotation = invert_quat(&rotation);
+        unsafe {
+            *self.rot.pending() = source_rotation;
+        }
+        self.rot.flush();
+    }
 }
+
+unsafe impl Send for SpatialSceneHandle {}
+
+type ErasedSpatial = Arc<SourceData<Spatial<dyn Source<Frame = Sample> + Send>>>;
 
 /// An individual spatialized source
 pub struct Spatial<T: ?Sized> {
@@ -85,7 +107,14 @@ impl<T> Spatial<T>
 where
     T: ?Sized + Source<Frame = Sample>,
 {
-    fn sample(&self, offset: f32, world_dt: f32, mut out: StridedMut<'_, [Sample; 2]>) {
+    fn sample(
+        &self,
+        prev_rot: &mint::Quaternion<f32>,
+        rot: &mint::Quaternion<f32>,
+        offset: f32,
+        world_dt: f32,
+        mut out: StridedMut<'_, [Sample; 2]>,
+    ) {
         let prev_position;
         let next_position;
         unsafe {
@@ -100,10 +129,16 @@ where
                 debug_assert_eq!(orig_next.position, (*self.motion.received()).position);
             }
 
-            prev_position = state.smoothed_position(offset, &*self.motion.received());
-            next_position = state.smoothed_position(
-                offset + world_dt * out.len() as f32,
-                &*self.motion.received(),
+            prev_position = rotate(
+                prev_rot,
+                &state.smoothed_position(offset, &*self.motion.received()),
+            );
+            next_position = rotate(
+                rot,
+                &state.smoothed_position(
+                    offset + world_dt * out.len() as f32,
+                    &*self.motion.received(),
+                ),
             );
         }
 
@@ -184,9 +219,12 @@ impl<'a, T> SpatialControl<'a, T> {
 /// [`Source`] for stereo output from a spatial scene, created by [`spatial`]
 pub struct SpatialScene(RefCell<Inner>);
 
+unsafe impl Send for SpatialScene {}
+
 struct Inner {
     set: Set<ErasedSpatial>,
     buffer: Box<[[Sample; 2]]>,
+    rot: Arc<Swap<mint::Quaternion<f32>>>,
 }
 
 impl Source for SpatialScene {
@@ -195,6 +233,11 @@ impl Source for SpatialScene {
     fn sample(&self, offset: f32, sample_duration: f32, mut out: StridedMut<'_, [Sample; 2]>) {
         let this = &mut *self.0.borrow_mut();
         this.set.update();
+        let (mut prev_rot, rot) = unsafe {
+            let prev = *this.rot.received();
+            this.rot.refresh();
+            (prev, *this.rot.received())
+        };
 
         for o in &mut out {
             *o = [0.0; 2];
@@ -217,6 +260,8 @@ impl Source for SpatialScene {
                 let n = iter.len().min(this.buffer.len());
                 let staging = &mut this.buffer[..n];
                 data.source.sample(
+                    &prev_rot,
+                    &rot,
                     offset + i as f32 * sample_duration,
                     sample_duration,
                     staging.into(),
@@ -225,6 +270,7 @@ impl Source for SpatialScene {
                     *o = o.mix(staged);
                 }
                 i += n;
+                prev_rot = rot;
             }
         }
     }
