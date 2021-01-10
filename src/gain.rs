@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{Controlled, Filter, Frame, Source};
+use crate::{frame, Controlled, Filter, Frame, Source};
 
 /// Scales amplitude by a dynamically-adjustable factor
 pub struct Gain<T: ?Sized> {
@@ -29,7 +29,7 @@ where
         // Should we blend from the previous value?
         let gain = f32::from_bits(self.gain.load(Ordering::Relaxed));
         for x in out {
-            *x = x.scale(gain);
+            *x = frame::scale(x, gain);
         }
     }
 
