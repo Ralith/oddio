@@ -24,10 +24,6 @@ impl<T> Spatial<T> {
             inner,
             motion: Swap::new(Motion { position, velocity }),
             state: UnsafeCell::new(State {
-                ears: [
-                    EarState::new(position, Ear::Left),
-                    EarState::new(position, Ear::Right),
-                ],
                 prev_position: position,
                 dt: 0.0,
             }),
@@ -97,10 +93,6 @@ where
         unsafe {
             let state = &mut *self.state.get();
             state.dt += dt;
-            let next_position = state.smoothed_position(0.0, &*self.motion.received());
-            for &ear in [Ear::Left, Ear::Right].iter() {
-                state.ears[ear] = EarState::new(next_position, ear);
-            }
         }
         self.inner.advance(dt);
     }
@@ -149,7 +141,6 @@ struct Motion {
 }
 
 struct State {
-    ears: [EarState; 2],
     /// Smoothed position estimate when position/vel were updated
     prev_position: mint::Point3<f32>,
     /// Seconds since position/vel were updated
