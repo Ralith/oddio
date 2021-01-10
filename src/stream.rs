@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, UnsafeCell};
 
-use crate::{spsc, Sample, Source, StridedMut};
+use crate::{spsc, Sample, Source};
 
 /// Construct an unbounded stream of dynamic audio
 ///
@@ -81,7 +81,7 @@ impl Source for Receiver {
     // This could be made generic if needed.
     type Frame = Sample;
 
-    fn sample(&self, offset: f32, dt: f32, mut out: StridedMut<'_, Sample>) {
+    fn sample(&self, offset: f32, dt: f32, out: &mut [Sample]) {
         unsafe {
             (*self.inner.get()).update();
         }
@@ -122,9 +122,8 @@ mod tests {
 
     fn assert_seq(recv: &Receiver, start: f32, seq: &[f32]) {
         let mut buf = [0.0];
-        let mut buf = StridedMut::from(&mut buf[..]);
         for (i, &expected) in seq.iter().enumerate() {
-            recv.sample(start + i as f32, 1.0, buf.borrow());
+            recv.sample(start + i as f32, 1.0, &mut buf);
             let actual = buf[0];
             if expected != actual {
                 panic!(
@@ -143,7 +142,7 @@ mod tests {
         let (mut send, recv) = stream(1, 4, 4);
         assert_eq!(send.write(&[1.0, 2.0, 3.0]), 3);
         assert_eq!(send.write(&[4.0, 5.0]), 2);
-        recv.sample(0.0, 1.0, StridedMut::default()); // Trigger update
+        recv.sample(0.0, 1.0, &mut []); // Trigger update
         assert_seq(&recv, -1.0, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
 
         recv.advance(1.0);
@@ -155,7 +154,7 @@ mod tests {
 
         // Only 4 slots available to the writer
         assert_eq!(send.write(&[6.0, 7.0, 8.0, 9.0, 10.0]), 4);
-        recv.sample(0.0, 1.0, StridedMut::default()); // Trigger update
+        recv.sample(0.0, 1.0, &mut []); // Trigger update
         assert_seq(&recv, -1.0, &[5.0, 6.0, 7.0, 8.0, 9.0, 0.0]);
     }
 }
