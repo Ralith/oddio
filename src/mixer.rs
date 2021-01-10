@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use crate::{set, ErasedSource, Frame, Handle, Set, SetHandle, Source};
+use crate::{frame, set, ErasedSource, Frame, Handle, Set, SetHandle, Source};
 
 /// Build a mixer and a handle for controlling it
 pub fn mixer<T: Frame + Copy>() -> (MixerHandle<T>, Mixer<T>) {
@@ -77,7 +77,7 @@ impl<T: Frame> Source for Mixer<T> {
                     staging,
                 );
                 for (staged, o) in staging.iter().zip(&mut iter) {
-                    *o = o.mix(staged);
+                    *o = frame::mix(o, staged);
                 }
                 i += n;
             }

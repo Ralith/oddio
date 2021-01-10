@@ -2,53 +2,69 @@ use crate::Sample;
 
 /// A single frame of audio data, encoding one sample for each channel
 pub trait Frame {
-    /// The neutral value
+    /// A frame with zeroes in every channel
     const ZERO: Self;
 
-    /// Linearly interpolate the samples of two frames
-    fn lerp(&self, other: &Self, t: f32) -> Self;
+    /// Access the frame's channels
+    fn channels(&self) -> &[Sample];
 
-    /// Mix with `other`
-    fn mix(&self, other: &Self) -> Self;
+    /// Mutably access the frame's channels
+    fn channels_mut(&mut self) -> &mut [Sample];
+}
 
-    /// Scale by `factor`
-    fn scale(&self, factor: f32) -> Self;
+fn map<T: Frame>(x: &T, mut f: impl FnMut(Sample) -> Sample) -> T {
+    let mut out = T::ZERO;
+    for (&x, o) in x.channels().iter().zip(out.channels_mut()) {
+        *o = f(x);
+    }
+    out
+}
+
+fn bimap<T: Frame>(x: &T, y: &T, mut f: impl FnMut(Sample, Sample) -> Sample) -> T {
+    let mut out = T::ZERO;
+    for ((&x, &y), o) in x
+        .channels()
+        .iter()
+        .zip(y.channels())
+        .zip(out.channels_mut())
+    {
+        *o = f(x, y);
+    }
+    out
+}
+
+pub(crate) fn lerp<T: Frame>(a: &T, b: &T, t: f32) -> T {
+    bimap(a, b, |a, b| a + t * (b - a))
+}
+
+pub(crate) fn mix<T: Frame>(a: &T, b: &T) -> T {
+    bimap(a, b, |a, b| a + b)
+}
+
+pub(crate) fn scale<T: Frame>(x: &T, factor: f32) -> T {
+    map(x, |x| x * factor)
 }
 
 impl Frame for Sample {
     const ZERO: Sample = 0.0;
 
-    #[inline]
-    fn lerp(&self, other: &Sample, t: f32) -> Sample {
-        self + t * (other - self)
+    fn channels(&self) -> &[Sample] {
+        std::slice::from_ref(self)
     }
 
-    #[inline]
-    fn mix(&self, other: &Sample) -> Sample {
-        self + other
-    }
-
-    #[inline]
-    fn scale(&self, factor: f32) -> Sample {
-        self * factor
+    fn channels_mut(&mut self) -> &mut [Sample] {
+        std::slice::from_mut(self)
     }
 }
 
 impl Frame for [Sample; 2] {
     const ZERO: [Sample; 2] = [0.0; 2];
 
-    #[inline]
-    fn lerp(&self, other: &[Sample; 2], t: f32) -> [Sample; 2] {
-        [self[0].lerp(&other[0], t), self[1].lerp(&other[1], t)]
+    fn channels(&self) -> &[Sample] {
+        self.as_ref()
     }
 
-    #[inline]
-    fn mix(&self, other: &[Sample; 2]) -> [Sample; 2] {
-        [self[0] + other[0], self[1] + other[1]]
-    }
-
-    #[inline]
-    fn scale(&self, factor: f32) -> [Sample; 2] {
-        [self[0] * factor, self[1] * factor]
+    fn channels_mut(&mut self) -> &mut [Sample] {
+        self.as_mut()
     }
 }

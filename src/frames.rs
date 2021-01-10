@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Frame, Source};
+use crate::{frame, Frame, Source};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -87,7 +87,7 @@ impl<T: Frame + Copy> Frames<T> {
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);
-        a.lerp(&b, fract)
+        frame::lerp(&a, &b, fract)
     }
 
     #[inline]

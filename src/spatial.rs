@@ -8,11 +8,12 @@ use std::{
 };
 
 use crate::{
+    frame,
     handle::SourceData,
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub},
     set::{set, Set, SetHandle},
     swap::Swap,
-    Controlled, Filter, Frame, Handle, Sample, Source,
+    Controlled, Filter, Handle, Sample, Source,
 };
 
 /// Create a [`Source`] for spatializing mono sources for stereo output
@@ -265,7 +266,7 @@ impl Source for SpatialScene {
                     [l, r],
                 );
                 for ((&l, &r), o) in l.iter().zip(r.iter()).zip(&mut iter) {
-                    *o = o.mix(&[l, r]);
+                    *o = frame::mix(o, &[l, r]);
                 }
                 i += n;
                 prev_rot = rot;
