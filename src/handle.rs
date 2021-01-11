@@ -29,8 +29,9 @@ impl<S: Source + Send + 'static> Handle<S> {
     }
 }
 
-// Sound because `T` is not accessible through any safe interface unless `T: Sync`
+// Sound because `T` is not accessible except via `unsafe trait Controlled`
 unsafe impl<T> Send for Handle<T> {}
+unsafe impl<T> Sync for Handle<T> {}
 
 impl<T> Handle<T> {
     /// Mark the source to be stopped
@@ -41,13 +42,6 @@ impl<T> Handle<T> {
     /// Whether the source has been stopped
     pub fn is_stopped(&self) -> bool {
         self.shared.stop.load(Ordering::Relaxed)
-    }
-
-    /// Access a potentially `!Sync` source
-    ///
-    /// Building block for safe abstractions over shared memory.
-    pub(crate) fn get(&self) -> *const T {
-        &self.shared.source
     }
 }
 

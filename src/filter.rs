@@ -39,16 +39,16 @@ impl<T> Handle<T> {
     /// # Example
     /// ```
     /// # use oddio::*;
-    /// fn quiet(source: &Handle<Spatial<Gain<FramesSource<Sample>>>>) {
+    /// fn quiet(source: &mut Handle<Spatial<Gain<FramesSource<Sample>>>>) {
     ///     source.control::<Gain<_>, _>().set_gain(0.5);
     /// }
     /// ```
-    pub fn control<'a, S, Index>(&'a self) -> S::Control
+    pub fn control<'a, S, Index>(&'a mut self) -> S::Control
     where
         T: FilterHaving<S, Index>,
         S: Controlled<'a>,
     {
-        let source: &S = unsafe { (*self.get()).get() };
+        let source: &S = self.shared.source.get();
         S::make_control(source)
     }
 }

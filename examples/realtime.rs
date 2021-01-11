@@ -48,7 +48,7 @@ fn main() {
         .unwrap();
     stream.play().unwrap();
 
-    let source = scene_handle.play(
+    let mut source = scene_handle.play(
         oddio::FramesSource::from(boop),
         [-speed, 10.0, 0.0].into(),
         [speed, 0.0, 0.0].into(),
