@@ -83,6 +83,7 @@ impl SpatialSceneHandle {
 }
 
 unsafe impl Send for SpatialSceneHandle {}
+unsafe impl Sync for SpatialSceneHandle {}
 
 type ErasedSpatial = Arc<SourceData<Spatial<dyn Source<Frame = Sample> + Send>>>;
 

@@ -118,6 +118,7 @@ impl<T> SetHandle<T> {
 }
 
 unsafe impl<T> Send for SetHandle<T> {}
+unsafe impl<T> Sync for SetHandle<T> {}
 
 /// A collection of heterogeneous [`Source`]s, controlled from another thread by a [`SetHandle`]
 ///
