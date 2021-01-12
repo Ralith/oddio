@@ -1,4 +1,4 @@
-use crate::{Frame, Source};
+use crate::{Filter, Frame, Source};
 
 /// Smoothly maps a signal of any range into (-1, 1)
 ///
@@ -38,5 +38,12 @@ where
 
     fn remaining(&self) -> f32 {
         self.0.remaining()
+    }
+}
+
+impl<T> Filter for Reinhard<T> {
+    type Inner = T;
+    fn inner(&self) -> &T {
+        &self.0
     }
 }
