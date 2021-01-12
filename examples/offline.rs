@@ -16,7 +16,7 @@ fn main() {
     );
     let (mut scene_handle, scene) = oddio::spatial();
     scene_handle.play(
-        oddio::FramesSource::from(boop),
+        oddio::FramesSignal::from(boop),
         [-SPEED, 10.0, 0.0].into(),
         [SPEED, 0.0, 0.0].into(),
     );

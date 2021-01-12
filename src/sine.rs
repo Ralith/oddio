@@ -1,8 +1,8 @@
 use std::{cell::Cell, f32::consts::TAU};
 
-use crate::{Sample, Source};
+use crate::{Sample, Signal};
 
-/// A trivial [`Source`] that produces a sine wave of a particular frequency, forever
+/// A trivial [`Signal`] that produces a sine wave of a particular frequency, forever
 pub struct Sine {
     /// Normalized units, i.e. [0, 1)
     phase: Cell<f32>,
@@ -24,7 +24,7 @@ impl Sine {
     }
 }
 
-impl Source for Sine {
+impl Signal for Sine {
     type Frame = Sample;
 
     fn sample(&self, offset: f32, sample_length: f32, out: &mut [Sample]) {

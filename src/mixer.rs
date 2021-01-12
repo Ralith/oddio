@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use crate::{frame, set, ErasedSource, Frame, Handle, Set, SetHandle, Source};
+use crate::{frame, set, ErasedSignal, Frame, Handle, Set, SetHandle, Signal};
 
 /// Build a mixer and a handle for controlling it
 pub fn mixer<T: Frame + Copy>() -> (MixerHandle<T>, Mixer<T>) {
@@ -17,34 +17,34 @@ pub fn mixer<T: Frame + Copy>() -> (MixerHandle<T>, Mixer<T>) {
 /// Handle for controlling a [`Mixer`] from another thread
 ///
 /// Constructed by calling [`mixer`].
-pub struct MixerHandle<T>(SetHandle<ErasedSource<T>>);
+pub struct MixerHandle<T>(SetHandle<ErasedSignal<T>>);
 
 impl<T> MixerHandle<T> {
-    /// Begin playing `source`, returning a handle controlling its playback
+    /// Begin playing `signal`, returning a handle controlling its playback
     ///
-    /// Finished sources are automatically stopped, and their storage reused for future `play`
+    /// Finished signals are automatically stopped, and their storage reused for future `play`
     /// calls.
-    pub fn play<S>(&mut self, source: S) -> Handle<S>
+    pub fn play<S>(&mut self, signal: S) -> Handle<S>
     where
-        S: Source<Frame = T> + Send + 'static,
+        S: Signal<Frame = T> + Send + 'static,
     {
-        let (handle, erased) = Handle::new(source);
+        let (handle, erased) = Handle::new(signal);
         self.0.insert(erased);
         handle
     }
 }
 
-/// A [`Source`] that mixes a dynamic set of [`Source`]s, controlled by a [`MixerHandle`]
+/// A [`Signal`] that mixes a dynamic set of [`Signal`]s, controlled by a [`MixerHandle`]
 ///
 /// Constructed by calling [`mixer`].
 pub struct Mixer<T>(RefCell<Inner<T>>);
 
 struct Inner<T> {
-    set: Set<ErasedSource<T>>,
+    set: Set<ErasedSignal<T>>,
     buffer: Box<[T]>,
 }
 
-impl<T: Frame> Source for Mixer<T> {
+impl<T: Frame> Signal for Mixer<T> {
     type Frame = T;
 
     fn sample(&self, offset: f32, sample_duration: f32, out: &mut [T]) {
@@ -56,11 +56,11 @@ impl<T: Frame> Source for Mixer<T> {
         }
 
         for i in (0..this.set.len()).rev() {
-            let source = &this.set[i];
-            if source.remaining() < 0.0 {
-                source.stop();
+            let signal = &this.set[i];
+            if signal.remaining() < 0.0 {
+                signal.stop();
             }
-            if source.is_stopped() {
+            if signal.is_stopped() {
                 this.set.remove(i);
                 continue;
             }
@@ -71,7 +71,7 @@ impl<T: Frame> Source for Mixer<T> {
             while iter.len() > 0 {
                 let n = iter.len().min(this.buffer.len());
                 let staging = &mut this.buffer[..n];
-                source.sample(
+                signal.sample(
                     offset + i as f32 * sample_duration,
                     sample_duration,
                     staging,
@@ -86,8 +86,8 @@ impl<T: Frame> Source for Mixer<T> {
 
     fn advance(&self, dt: f32) {
         let this = self.0.borrow_mut();
-        for source in this.set.iter() {
-            source.advance(dt);
+        for signal in this.set.iter() {
+            signal.advance(dt);
         }
     }
 

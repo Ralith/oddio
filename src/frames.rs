@@ -7,14 +7,14 @@ use std::{
     sync::Arc,
 };
 
-use crate::{frame, Frame, Source};
+use crate::{frame, Frame, Signal};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
 /// Used to store e.g. sound effects decoded from files on disk.
 ///
 /// Dynamically sized type. Typically stored inside an `Arc`, allowing efficient simultaneous use by
-/// multiple sources.
+/// multiple signals.
 #[derive(Debug)]
 pub struct Frames<T> {
     rate: f64,
@@ -116,17 +116,17 @@ impl<T> DerefMut for Frames<T> {
     }
 }
 
-/// An audio source backed by a static sequence of samples
+/// An audio signal backed by a static sequence of samples
 #[derive(Debug, Clone)]
-pub struct FramesSource<T> {
+pub struct FramesSignal<T> {
     /// Frames to play
     data: Arc<Frames<T>>,
     /// Position of t=0 in seconds
     t: Cell<f64>,
 }
 
-impl<T> FramesSource<T> {
-    /// Create an audio source from some samples
+impl<T> FramesSignal<T> {
+    /// Create an audio signal from some samples
     ///
     /// `start_seconds` adjusts the initial playback position, and may be negative.
     pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> Self {
@@ -137,7 +137,7 @@ impl<T> FramesSource<T> {
     }
 }
 
-impl<T: Frame + Copy> Source for FramesSource<T> {
+impl<T: Frame + Copy> Signal for FramesSignal<T> {
     type Frame = T;
 
     #[inline]
@@ -160,7 +160,7 @@ impl<T: Frame + Copy> Source for FramesSource<T> {
     }
 }
 
-impl<T> From<Arc<Frames<T>>> for FramesSource<T> {
+impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
     fn from(samples: Arc<Frames<T>>) -> Self {
         Self::new(samples, 0.0)
     }

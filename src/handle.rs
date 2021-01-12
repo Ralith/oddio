@@ -6,25 +6,25 @@ use std::{
     },
 };
 
-use crate::Source;
+use crate::Signal;
 
-/// Handle for manipulating a source owned elsewhere
+/// Handle for manipulating a signal owned elsewhere
 pub struct Handle<T: ?Sized> {
-    pub(crate) shared: Arc<SourceData<T>>,
+    pub(crate) shared: Arc<SignalData<T>>,
 }
 
-impl<S: Source + Send + 'static> Handle<S> {
-    /// Construct a handle to `source` and erase its type
-    pub fn new(source: S) -> (Self, ErasedSource<S::Frame>) {
-        let shared = Arc::new(SourceData {
+impl<S: Signal + Send + 'static> Handle<S> {
+    /// Construct a handle to `signal` and erase its type
+    pub fn new(signal: S) -> (Self, ErasedSignal<S::Frame>) {
+        let shared = Arc::new(SignalData {
             stop: AtomicBool::new(false),
-            source,
+            signal,
         });
         (
             Self {
                 shared: shared.clone(),
             },
-            ErasedSource(shared),
+            ErasedSignal(shared),
         )
     }
 }
@@ -34,44 +34,44 @@ unsafe impl<T> Send for Handle<T> {}
 unsafe impl<T> Sync for Handle<T> {}
 
 impl<T> Handle<T> {
-    /// Mark the source to be stopped
+    /// Mark the signal to be stopped
     pub fn stop(&self) {
         self.shared.stop.store(true, Ordering::Relaxed);
     }
 
-    /// Whether the source has been stopped
+    /// Whether the signal has been stopped
     pub fn is_stopped(&self) -> bool {
         self.shared.stop.load(Ordering::Relaxed)
     }
 }
 
-/// Type-erased source for which a [`Handle`] exists
+/// Type-erased signal for which a [`Handle`] exists
 // Future work: Allow caller-controlled degree of erasure, so e.g. `SpatialScene` doesn't have to
 // rely on internal-only interfaces. Probably needs something like
 // https://github.com/rust-lang/rust/issues/27732.
-pub struct ErasedSource<T>(pub(crate) Arc<SourceData<dyn Source<Frame = T> + Send>>);
+pub struct ErasedSignal<T>(pub(crate) Arc<SignalData<dyn Signal<Frame = T> + Send>>);
 
-impl<T> ErasedSource<T> {
-    /// Mark the source as stopped
+impl<T> ErasedSignal<T> {
+    /// Mark the signal as stopped
     pub fn stop(&self) {
         self.0.stop.store(true, Ordering::Relaxed);
     }
 
-    /// Whether the source should be stopped
+    /// Whether the signal should be stopped
     pub fn is_stopped(&self) -> bool {
         self.0.stop.load(Ordering::Relaxed)
     }
 }
 
-impl<T> Deref for ErasedSource<T> {
-    type Target = dyn Source<Frame = T>;
-    fn deref(&self) -> &(dyn Source<Frame = T> + 'static) {
-        &self.0.source
+impl<T> Deref for ErasedSignal<T> {
+    type Target = dyn Signal<Frame = T>;
+    fn deref(&self) -> &(dyn Signal<Frame = T> + 'static) {
+        &self.0.signal
     }
 }
 
-/// State shared between [`Handle`] and [`ErasedSource`]
-pub(crate) struct SourceData<S: ?Sized> {
+/// State shared between [`Handle`] and [`ErasedSignal`]
+pub(crate) struct SignalData<S: ?Sized> {
     pub(crate) stop: AtomicBool,
-    pub(crate) source: S,
+    pub(crate) signal: S,
 }

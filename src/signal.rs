@@ -3,15 +3,15 @@ use crate::{flatten_stereo, Gain, Sample};
 /// An audio signal with a cursor
 ///
 /// This interface is intended for use only from the code actually generating an audio signal for
-/// output. For example, in a real-time application, `Source`s will typically be owned by the
-/// real-time audio thread and not directly accessible from elsewhere. Access to an active source
+/// output. For example, in a real-time application, `Signal`s will typically be owned by the
+/// real-time audio thread and not directly accessible from elsewhere. Access to an active signal
 /// for other purposes (e.g. to adjust parameters) is generally through [`Handle`](crate::Handle),
-/// using source-specific interfaces that implement wait-free inter-thread communication.
+/// using signal-specific interfaces that implement wait-free inter-thread communication.
 ///
 /// To ensure glitch-free audio, none of these methods should perform any operation that may
 /// wait. This includes locks, memory allocation or freeing, and even unbounded compare-and-swap
 /// loops.
-pub trait Source {
+pub trait Signal {
     /// Type of frames yielded by `get`, e.g. `[Sample; 2]` for stereo.
     type Frame;
 
@@ -27,15 +27,15 @@ pub trait Source {
     /// period covered by those samples.
     ///
     /// Note that this method takes `&self`, even though side-effects are expected. Implementers are
-    /// expected to rely on interior mutability. This allows `Source`s to be accessed while playing
+    /// expected to rely on interior mutability. This allows `Signal`s to be accessed while playing
     /// via [`Handle::control`](crate::Handle::control), permitting real-time control with
     /// e.g. atomics.
     fn advance(&self, dt: f32);
 
     /// Seconds until data runs out
     ///
-    /// May be infinite for unbounded sources, or negative after advancing past the end. May change
-    /// independently of calls to `advance` for sources with dynamic underlying data such as
+    /// May be infinite for unbounded signals, or negative after advancing past the end. May change
+    /// independently of calls to `advance` for signals with dynamic underlying data such as
     /// real-time streams.
     fn remaining(&self) -> f32;
 
@@ -43,10 +43,10 @@ pub trait Source {
     // Helpers
     //
 
-    /// Convert a source from mono to stereo by duplicating its output across both channels
+    /// Convert a signal from mono to stereo by duplicating its output across both channels
     fn into_stereo(self) -> MonoToStereo<Self>
     where
-        Self: Source<Frame = Sample> + Sized,
+        Self: Signal<Frame = Sample> + Sized,
     {
         MonoToStereo(self)
     }
@@ -60,10 +60,10 @@ pub trait Source {
     }
 }
 
-/// Adapt a mono source to output stereo by duplicating its output
+/// Adapt a mono signal to output stereo by duplicating its output
 pub struct MonoToStereo<T>(pub T);
 
-impl<T: Source<Frame = Sample>> Source for MonoToStereo<T> {
+impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
     type Frame = [Sample; 2];
 
     fn sample(&self, dt: f32, offset: f32, out: &mut [[Sample; 2]]) {
@@ -90,9 +90,9 @@ mod tests {
 
     use super::*;
 
-    struct CountingSource(Cell<u32>);
+    struct CountingSignal(Cell<u32>);
 
-    impl Source for CountingSource {
+    impl Signal for CountingSignal {
         type Frame = Sample;
         fn sample(&self, _: f32, _: f32, out: &mut [Sample]) {
             for x in out {
@@ -111,9 +111,9 @@ mod tests {
 
     #[test]
     fn mono_to_stereo() {
-        let source = CountingSource(Cell::new(0)).into_stereo();
+        let signal = CountingSignal(Cell::new(0)).into_stereo();
         let mut buf = [[0.0; 2]; 4];
-        source.sample(1.0, 0.0, (&mut buf[..]).into());
+        signal.sample(1.0, 0.0, (&mut buf[..]).into());
         assert_eq!(buf, [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]);
     }
 }
