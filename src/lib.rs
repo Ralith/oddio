@@ -14,7 +14,7 @@
 //! # let sample_rate = 44100;
 //! # let position = [0.0, 0.0, 0.0].into();
 //! # let velocity = [0.0, 0.0, 0.0].into();
-//! let frames = oddio::FramesSource::from(oddio::Frames::from_slice(sample_rate, &frames));
+//! let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
 //! let mut handle = scene_handle.play(frames, position, velocity);
 //!
 //! // When position/velocity changes:
@@ -22,11 +22,11 @@
 //! ```
 //!
 //! Key primitives:
-//! - [`Frames`] stores static audio data, which can be played with a [`FramesSource`]
-//! - [`Mixer`] allows multiple sources to be played concurrently and controlled during playback
-//! - [`SpatialScene`] is a mixer that spatializes its sources
-//! - [`Handle`] allows manipulation of a source while it's played on a [`SpatialScene`] or [`Mixer`]
-//! - [`run`] writes frames from a [`Source`] into an output buffer
+//! - [`Frames`] stores static audio data, which can be played with a [`FramesSignal`]
+//! - [`Mixer`] allows multiple signals to be played concurrently and controlled during playback
+//! - [`SpatialScene`] is a mixer that spatializes its signals
+//! - [`Handle`] allows manipulation of a signal while it's played on a [`SpatialScene`] or [`Mixer`]
+//! - [`run`] writes frames from a [`Signal`] into an output buffer
 
 #![warn(missing_docs)]
 
@@ -39,8 +39,8 @@ mod math;
 mod mixer;
 mod reinhard;
 mod set;
+mod signal;
 mod sine;
-mod source;
 mod spatial;
 mod spsc;
 mod stream;
@@ -54,8 +54,8 @@ pub use handle::*;
 pub use mixer::*;
 pub use reinhard::Reinhard;
 use set::*;
+pub use signal::*;
 pub use sine::*;
-pub use source::*;
 pub use spatial::*;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use swap::Swap;
@@ -63,13 +63,13 @@ pub use swap::Swap;
 /// Unitless instantaneous sound wave amplitude measurement
 pub type Sample = f32;
 
-/// Populate `out` with frames from `source` at `sample_rate`
+/// Populate `out` with frames from `signal` at `sample_rate`
 ///
-/// Convenience wrapper around the [`Source`] interface.
-pub fn run<S: Source>(source: &S, sample_rate: u32, out: &mut [S::Frame]) {
+/// Convenience wrapper around the [`Signal`] interface.
+pub fn run<S: Signal>(signal: &S, sample_rate: u32, out: &mut [S::Frame]) {
     let sample_len = 1.0 / sample_rate as f32;
-    source.sample(0.0, sample_len, out);
-    source.advance(sample_len * out.len() as f32);
+    signal.sample(0.0, sample_len, out);
+    signal.advance(sample_len * out.len() as f32);
 }
 
 /// Convert a slice of interleaved stereo data into a slice of stereo frames

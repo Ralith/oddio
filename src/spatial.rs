@@ -9,17 +9,17 @@ use std::{
 
 use crate::{
     frame,
-    handle::SourceData,
+    handle::SignalData,
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub},
     set::{set, Set, SetHandle},
     swap::Swap,
-    Controlled, Filter, Handle, Sample, Source,
+    Controlled, Filter, Handle, Sample, Signal,
 };
 
-/// Create a [`Source`] for spatializing mono sources for stereo output
+/// Create a [`Signal`] for spatializing mono signals for stereo output
 ///
 /// The scene can be controlled through [`SpatialSceneHandle`], and the resulting audio is produced by
-/// the [`SpatialScene`] [`Source`].
+/// the [`SpatialScene`] [`Signal`].
 pub fn spatial() -> (SpatialSceneHandle, SpatialScene) {
     let (handle, set) = set();
     let rot = Arc::new(Swap::new(mint::Quaternion {
@@ -46,24 +46,24 @@ pub struct SpatialSceneHandle {
 }
 
 impl SpatialSceneHandle {
-    /// Begin playing `source` at `position`, moving at `velocity`
+    /// Begin playing `signal` at `position`, moving at `velocity`
     ///
-    /// Returns a [`Handle`] that can be used to adjust the source's movement in the future, and
+    /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, and
     /// access other controls.
     pub fn play<S>(
         &mut self,
-        source: S,
+        signal: S,
         position: mint::Point3<f32>,
         velocity: mint::Vector3<f32>,
     ) -> Handle<Spatial<S>>
     where
-        S: Source<Frame = Sample> + Send + 'static,
+        S: Signal<Frame = Sample> + Send + 'static,
     {
-        let source = Spatial::new(source, position, velocity);
+        let signal = Spatial::new(signal, position, velocity);
         let handle = Handle {
-            shared: Arc::new(SourceData {
+            shared: Arc::new(SignalData {
                 stop: AtomicBool::new(false),
-                source,
+                signal,
             }),
         };
         self.set.insert(handle.shared.clone());
@@ -74,9 +74,9 @@ impl SpatialSceneHandle {
     ///
     /// An unrotated listener faces -Z, with +X to the right and +Y up.
     pub fn set_listener_rotation(&mut self, rotation: mint::Quaternion<f32>) {
-        let source_rotation = invert_quat(&rotation);
+        let signal_rotation = invert_quat(&rotation);
         unsafe {
-            *self.rot.pending() = source_rotation;
+            *self.rot.pending() = signal_rotation;
         }
         self.rot.flush();
     }
@@ -85,9 +85,9 @@ impl SpatialSceneHandle {
 unsafe impl Send for SpatialSceneHandle {}
 unsafe impl Sync for SpatialSceneHandle {}
 
-type ErasedSpatial = Arc<SourceData<Spatial<dyn Source<Frame = Sample> + Send>>>;
+type ErasedSpatial = Arc<SignalData<Spatial<dyn Signal<Frame = Sample> + Send>>>;
 
-/// An individual spatialized source
+/// An individual spatialized signal
 pub struct Spatial<T: ?Sized> {
     motion: Swap<Motion>,
     state: RefCell<State>,
@@ -106,7 +106,7 @@ impl<T> Spatial<T> {
 
 impl<T> Spatial<T>
 where
-    T: ?Sized + Source<Frame = Sample>,
+    T: ?Sized + Signal<Frame = Sample>,
 {
     fn sample(
         &self,
@@ -195,19 +195,19 @@ impl<T> Filter for Spatial<T> {
     }
 }
 
-/// Control for updating the motion of a spatial source
+/// Control for updating the motion of a spatial signal
 pub struct SpatialControl<'a, T>(&'a Spatial<T>);
 
 unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
     type Control = SpatialControl<'a, T>;
 
-    fn make_control(source: &'a Spatial<T>) -> Self::Control {
-        SpatialControl(source)
+    fn make_control(signal: &'a Spatial<T>) -> Self::Control {
+        SpatialControl(signal)
     }
 }
 
 impl<'a, T> SpatialControl<'a, T> {
-    /// Update the position and velocity of the source
+    /// Update the position and velocity of the signal
     pub fn set_motion(&mut self, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) {
         unsafe {
             *self.0.motion.pending() = Motion { position, velocity };
@@ -216,7 +216,7 @@ impl<'a, T> SpatialControl<'a, T> {
     }
 }
 
-/// [`Source`] for stereo output from a spatial scene, created by [`spatial`]
+/// [`Signal`] for stereo output from a spatial scene, created by [`spatial`]
 pub struct SpatialScene(RefCell<Inner>);
 
 unsafe impl Send for SpatialScene {}
@@ -227,7 +227,7 @@ struct Inner {
     rot: Arc<Swap<mint::Quaternion<f32>>>,
 }
 
-impl Source for SpatialScene {
+impl Signal for SpatialScene {
     type Frame = [Sample; 2];
 
     fn sample(&self, offset: f32, sample_duration: f32, out: &mut [[Sample; 2]]) {
@@ -245,7 +245,7 @@ impl Source for SpatialScene {
 
         for i in (0..this.set.len()).rev() {
             let data = &this.set[i];
-            if data.source.remaining() < 0.0 {
+            if data.signal.remaining() < 0.0 {
                 data.stop.store(true, Ordering::Relaxed);
             }
             if data.stop.load(Ordering::Relaxed) {
@@ -259,7 +259,7 @@ impl Source for SpatialScene {
             while iter.len() > 0 {
                 let n = iter.len().min(this.buffer.len() / 2);
                 let (l, r) = this.buffer[..n * 2].split_at_mut(n);
-                data.source.sample(
+                data.signal.sample(
                     &prev_rot,
                     &rot,
                     offset + i as f32 * sample_duration,
@@ -278,7 +278,7 @@ impl Source for SpatialScene {
     fn advance(&self, dt: f32) {
         let this = self.0.borrow();
         for data in this.set.iter() {
-            data.source.advance(dt);
+            data.signal.advance(dt);
         }
     }
 
@@ -403,7 +403,7 @@ impl Ear {
     }
 }
 
-/// Rate sound travels from sources to listeners (m/s)
+/// Rate sound travels from signals to listeners (m/s)
 const SPEED_OF_SOUND: f32 = 343.0;
 
 /// Distance from center of head to an ear (m)

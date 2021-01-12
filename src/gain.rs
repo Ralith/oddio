@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{frame, Controlled, Filter, Frame, Source};
+use crate::{frame, Controlled, Filter, Frame, Signal};
 
 /// Scales amplitude by a dynamically-adjustable factor
 pub struct Gain<T: ?Sized> {
@@ -9,16 +9,16 @@ pub struct Gain<T: ?Sized> {
 }
 
 impl<T> Gain<T> {
-    /// Apply dynamic gain to `source`
-    pub fn new(source: T) -> Self {
+    /// Apply dynamic gain to `signal`
+    pub fn new(signal: T) -> Self {
         Self {
             gain: AtomicU32::new(1.0f32.to_bits()),
-            inner: source,
+            inner: signal,
         }
     }
 }
 
-impl<T: Source> Source for Gain<T>
+impl<T: Signal> Signal for Gain<T>
 where
     T::Frame: Frame,
 {
@@ -54,8 +54,8 @@ pub struct GainControl<'a, T>(&'a Gain<T>);
 unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
     type Control = GainControl<'a, T>;
 
-    fn make_control(source: &'a Gain<T>) -> Self::Control {
-        GainControl(source)
+    fn make_control(signal: &'a Gain<T>) -> Self::Control {
+        GainControl(signal)
     }
 }
 

@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, UnsafeCell};
 
-use crate::{spsc, Sample, Source};
+use crate::{spsc, Sample, Signal};
 
 /// Construct an unbounded stream of dynamic audio
 ///
@@ -77,7 +77,7 @@ impl Receiver {
     }
 }
 
-impl Source for Receiver {
+impl Signal for Receiver {
     // This could be made generic if needed.
     type Frame = Sample;
 

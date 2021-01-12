@@ -6,8 +6,8 @@ Oddio is a game-oriented audio library that is:
 - **Sans I/O**: Send output wherever you like
 - **Real-time**: Audio output is efficient and wait-free: no glitches until you run out of CPU
 - **3D**: Spatialization with doppler effects and propagation delay available out of the box
-- **Extensible**: Implement `Source` for custom streaming synthesis and filtering
-- **Composable**: `Source`s can be transformed without obstructing the inner `Source`'s controls
+- **Extensible**: Implement `Signal` for custom streaming synthesis and filtering
+- **Composable**: `Signal`s can be transformed without obstructing the inner `Signal`'s controls
 
 ### Example
 
@@ -19,7 +19,7 @@ let out_frames = oddio::frame_stereo(data);
 oddio::run(&scene, output_sample_rate, out_frames);
 
 // In game logic:
-let frames = oddio::FramesSource::from(oddio::Frames::from_slice(sample_rate, &frames));
+let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
 let mut handle = scene_handle.play(frames, position, velocity);
 
 // When position/velocity changes:

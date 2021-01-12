@@ -5,7 +5,7 @@ use std::{
 
 /// SPSC queue that only retains the last element sent
 ///
-/// Useful for custom controllable sources.
+/// Useful for custom controllable signals.
 pub struct Swap<T> {
     slots: [UnsafeCell<T>; 3],
     send: Cell<usize>,
