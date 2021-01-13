@@ -30,6 +30,7 @@
 
 #![warn(missing_docs)]
 
+mod cycle;
 mod filter;
 mod frame;
 mod frames;
@@ -47,6 +48,7 @@ mod spsc;
 mod stream;
 mod swap;
 
+pub use cycle::Cycle;
 pub use filter::*;
 pub use frame::Frame;
 pub use frames::*;
