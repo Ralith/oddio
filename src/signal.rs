@@ -15,10 +15,10 @@ pub trait Signal {
     /// Type of frames yielded by `get`, e.g. `[Sample; 2]` for stereo.
     type Frame;
 
-    /// Sample a period of `sample_length * out.len()` seconds starting at `offset` from the cursor.
+    /// Sample every `sample_interval` seconds starting at `offset` from the cursor.
     ///
-    /// `sample_length` and `offset` may be negative.
-    fn sample(&self, offset: f32, sample_length: f32, out: &mut [Self::Frame]);
+    /// `sample_interval` and `offset` may be negative.
+    fn sample(&self, offset: f32, sample_interval: f32, out: &mut [Self::Frame]);
 
     /// Advance time by `dt` seconds
     ///
