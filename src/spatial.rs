@@ -49,7 +49,7 @@ impl SpatialSceneHandle {
     /// Begin playing `signal` at `position`, moving at `velocity`
     ///
     /// Coordinates should be in world space, translated such that the listener is at the origin,
-    /// but not rotated.
+    /// but not rotated. Units are meters and meters per second.
     ///
     /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, and
     /// access other controls.
@@ -213,7 +213,7 @@ impl<'a, T> SpatialControl<'a, T> {
     /// Update the position and velocity of the signal
     ///
     /// Coordinates should be in world space, translated such that the listener is at the origin,
-    /// but not rotated.
+    /// but not rotated. Units are meters and meters per second.
     pub fn set_motion(&mut self, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) {
         unsafe {
             *self.0.motion.pending() = Motion { position, velocity };
