@@ -42,6 +42,7 @@ mod set;
 mod signal;
 mod sine;
 mod spatial;
+mod speed;
 mod spsc;
 mod stream;
 mod swap;
@@ -57,6 +58,7 @@ use set::*;
 pub use signal::*;
 pub use sine::*;
 pub use spatial::*;
+pub use speed::Speed;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use swap::Swap;
 
