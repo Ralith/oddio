@@ -156,7 +156,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
 
     #[inline]
     fn remaining(&self) -> f32 {
-        (self.data.samples.len() as f64 - self.t.get() * self.data.rate) as f32
+        (self.data.samples.len() as f64 / self.data.rate - self.t.get()) as f32
     }
 }
 
