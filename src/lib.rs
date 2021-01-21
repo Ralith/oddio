@@ -1,7 +1,8 @@
 //! Lightweight game audio
 //!
 //! ```no_run
-//! let (mut scene_handle, scene) = oddio::spatial();
+//! # let sample_rate = 44100;
+//! let (mut scene_handle, scene) = oddio::spatial(sample_rate, 0.1);
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];
@@ -15,7 +16,7 @@
 //! # let position = [0.0, 0.0, 0.0].into();
 //! # let velocity = [0.0, 0.0, 0.0].into();
 //! let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
-//! let mut handle = scene_handle.play(frames, position, velocity);
+//! let mut handle = scene_handle.play(frames, position, velocity, 1000.0);
 //!
 //! // When position/velocity changes:
 //! handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
@@ -39,6 +40,7 @@ mod handle;
 mod math;
 mod mixer;
 mod reinhard;
+mod ring;
 mod set;
 mod signal;
 mod sine;
@@ -69,11 +71,10 @@ pub type Sample = f32;
 
 /// Populate `out` with frames from `signal` at `sample_rate`
 ///
-/// Convenience wrapper around the [`Signal`] interface.
+/// Convenience wrapper for [`Signal::sample`].
 pub fn run<S: Signal>(signal: &S, sample_rate: u32, out: &mut [S::Frame]) {
-    let sample_len = 1.0 / sample_rate as f32;
-    signal.sample(0.0, sample_len, out);
-    signal.advance(sample_len * out.len() as f32);
+    let interval = 1.0 / sample_rate as f32;
+    signal.sample(interval, out);
 }
 
 /// Convert a slice of interleaved stereo data into a slice of stereo frames

@@ -1,18 +1,12 @@
-use std::{
-    cell::Cell,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{Controlled, Filter, Frame, Signal};
+use crate::{Controlled, Filter, Frame, Seek, Signal};
 
 /// Scales rate of playback by a dynamically-adjustable factor
 ///
 /// Higher/lower speeds will naturally result in higher/lower pitched sound respectively.
 pub struct Speed<T: ?Sized> {
-    // To avoid temporal discontinuities when advancing after sampling, we only update `speed` after
-    // `advance`.
-    speed_shared: AtomicU32,
-    speed: Cell<f32>,
+    speed: AtomicU32,
     inner: T,
 }
 
@@ -20,8 +14,7 @@ impl<T> Speed<T> {
     /// Apply dynamic speed to `signal`
     pub fn new(signal: T) -> Self {
         Self {
-            speed_shared: AtomicU32::new(1.0f32.to_bits()),
-            speed: Cell::new(1.0),
+            speed: AtomicU32::new(1.0f32.to_bits()),
             inner: signal,
         }
     }
@@ -33,22 +26,14 @@ where
 {
     type Frame = T::Frame;
 
-    fn sample(&self, offset: f32, sample_interval: f32, out: &mut [T::Frame]) {
-        self.inner.sample(
-            offset * self.speed.get(),
-            sample_interval * self.speed.get(),
-            out,
-        );
-    }
-
-    fn advance(&self, dt: f32) {
-        self.inner.advance(dt * self.speed.get());
-        self.speed
-            .set(f32::from_bits(self.speed_shared.load(Ordering::Relaxed)));
+    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
+        self.inner.sample(interval * speed, out);
     }
 
     fn remaining(&self) -> f32 {
-        self.inner.remaining() / self.speed.get()
+        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
+        self.inner.remaining() / speed
     }
 }
 
@@ -56,6 +41,13 @@ impl<T> Filter for Speed<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.inner
+    }
+}
+
+impl<T: Seek> Seek for Speed<T> {
+    fn seek_to(&self, t: f32) {
+        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
+        self.inner.seek_to(t * speed);
     }
 }
 
@@ -72,13 +64,11 @@ unsafe impl<'a, T: 'a> Controlled<'a> for Speed<T> {
 impl<'a, T> SpeedControl<'a, T> {
     /// Get the current speed
     pub fn speed(&self) -> f32 {
-        f32::from_bits(self.0.speed_shared.load(Ordering::Relaxed))
+        f32::from_bits(self.0.speed.load(Ordering::Relaxed))
     }
 
     /// Adjust the speed
     pub fn set_speed(&mut self, factor: f32) {
-        self.0
-            .speed_shared
-            .store(factor.to_bits(), Ordering::Relaxed);
+        self.0.speed.store(factor.to_bits(), Ordering::Relaxed);
     }
 }

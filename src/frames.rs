@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{frame, Frame, Signal};
+use crate::{frame, Frame, Seek, Signal};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -141,17 +141,14 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
     type Frame = T;
 
     #[inline]
-    fn sample(&self, offset: f32, dt: f32, out: &mut [T]) {
-        let s0 = (self.t.get() + f64::from(offset)) * self.data.rate;
-        let ds = f64::from(dt) * self.data.rate;
+    fn sample(&self, interval: f32, out: &mut [T]) {
+        let s0 = self.t.get() * self.data.rate;
+        let ds = f64::from(interval) * self.data.rate;
         for (i, o) in out.iter_mut().enumerate() {
             *o = self.data.sample(s0 + ds * i as f64);
         }
-    }
-
-    #[inline]
-    fn advance(&self, dt: f32) {
-        self.t.set(self.t.get() + f64::from(dt));
+        self.t
+            .set(self.t.get() + f64::from(interval) * out.len() as f64);
     }
 
     #[inline]
@@ -163,5 +160,11 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
 impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
     fn from(samples: Arc<Frames<T>>) -> Self {
         Self::new(samples, 0.0)
+    }
+}
+
+impl<T> Seek for FramesSignal<T> {
+    fn seek_to(&self, t: f32) {
+        self.t.set(t.into());
     }
 }
