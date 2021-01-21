@@ -47,7 +47,7 @@ struct Inner<T> {
 impl<T: Frame> Signal for Mixer<T> {
     type Frame = T;
 
-    fn sample(&self, offset: f32, sample_duration: f32, out: &mut [T]) {
+    fn sample(&self, interval: f32, out: &mut [T]) {
         let this = &mut *self.0.borrow_mut();
         this.set.update();
 
@@ -67,32 +67,14 @@ impl<T: Frame> Signal for Mixer<T> {
 
             // Sample into `buffer`, then mix into `out`
             let mut iter = out.iter_mut();
-            let mut i = 0;
             while iter.len() > 0 {
                 let n = iter.len().min(this.buffer.len());
                 let staging = &mut this.buffer[..n];
-                signal.sample(
-                    offset + i as f32 * sample_duration,
-                    sample_duration,
-                    staging,
-                );
+                signal.sample(interval, staging);
                 for (staged, o) in staging.iter().zip(&mut iter) {
                     *o = frame::mix(o, staged);
                 }
-                i += n;
             }
         }
-    }
-
-    fn advance(&self, dt: f32) {
-        let this = self.0.borrow_mut();
-        for signal in this.set.iter() {
-            signal.advance(dt);
-        }
-    }
-
-    #[inline]
-    fn remaining(&self) -> f32 {
-        f32::INFINITY
     }
 }

@@ -29,16 +29,13 @@ fn main() {
 
     let speed = 50.0;
 
-    let (mut scene_handle, scene) = oddio::spatial();
+    let (mut scene_handle, scene) = oddio::spatial(sample_rate.0, 0.1);
 
     let stream = device
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let frames = oddio::frame_stereo(data);
-                for s in &mut frames[..] {
-                    *s = [0.0, 0.0];
-                }
                 oddio::run(&scene, sample_rate.0, frames);
             },
             move |err| {
@@ -52,6 +49,7 @@ fn main() {
         oddio::FramesSignal::from(boop),
         [-speed, 10.0, 0.0].into(),
         [speed, 0.0, 0.0].into(),
+        1000.0,
     );
 
     let start = Instant::now();
@@ -62,9 +60,9 @@ fn main() {
         if dt >= Duration::from_secs(DURATION_SECS as u64) {
             break;
         }
-        // This is in principle a no-op because the velocity isn't changing, but due to imprecise
-        // sleep times and the fact that the audio thread runs at unaligned intervals means that the
-        // this would produce glitches if not for smoothing done by `Spatial`.
+        // This has no noticable effect because it matches the initial velocity, but serves to
+        // demonstrate that `Spatial` can smooth over the inevitable small timing inconsistencies
+        // between the main thread and the audio thread without glitching.
         signal.control::<oddio::Spatial<_>, _>().set_motion(
             [-speed + speed * dt.as_secs_f32(), 10.0, 0.0].into(),
             [speed, 0.0, 0.0].into(),

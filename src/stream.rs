@@ -11,18 +11,13 @@ use crate::{spsc, Sample, Signal};
 /// audio output.
 ///
 /// - `rate` is the stream's sample rate
-/// - `past_size` dictates the number of already-played samples to store. Bounds the maximum
-///   distance this stream can be heard from for a particular speed of sound.
-/// - `future_size` dictates how much storage is allocated for samples yet to be played. Governs the
-///   maximum achievable latency. Should be at least large enough to fill one output buffer to avoid
-///   constant underruns.
-pub fn stream(rate: u32, past_size: usize, future_size: usize) -> (Sender, Receiver) {
-    let (send, recv) = spsc::channel(past_size + future_size);
+/// - `size` dictates the maximum number of buffered frames
+pub fn stream(rate: u32, size: usize) -> (Sender, Receiver) {
+    let (send, recv) = spsc::channel(size);
     (
         Sender { inner: send },
         Receiver {
             rate,
-            past_size,
             inner: UnsafeCell::new(recv),
             t: Cell::new(0.0),
             closed_for: Cell::new(None),
@@ -45,7 +40,6 @@ impl Sender {
 /// Handle for sampling from a stream
 pub struct Receiver {
     rate: u32,
-    past_size: usize,
     inner: UnsafeCell<spsc::Receiver<Sample>>,
     /// Offset of t=0 from the start of the buffer, in samples
     t: Cell<f32>,
@@ -75,23 +69,6 @@ impl Receiver {
         let b = self.get(x1);
         a + fract * (b - a)
     }
-}
-
-impl Signal for Receiver {
-    // This could be made generic if needed.
-    type Frame = Sample;
-
-    fn sample(&self, offset: f32, dt: f32, out: &mut [Sample]) {
-        unsafe {
-            (*self.inner.get()).update();
-        }
-        let s0 = self.t.get() + offset * self.rate as f32;
-        let ds = dt * self.rate as f32;
-
-        for (i, o) in out.iter_mut().enumerate() {
-            *o = self.sample_single(s0 + ds * i as f32);
-        }
-    }
 
     fn advance(&self, dt: f32) {
         let is_closed = unsafe { (*self.inner.get()).is_closed() };
@@ -101,13 +78,27 @@ impl Signal for Receiver {
             return;
         }
         let inner = unsafe { &mut *self.inner.get() };
-        self.t
-            .set((self.t.get() + dt * self.rate as f32).min((inner.len() + self.past_size) as f32));
-        let excess = (self.t.get() - self.past_size as f32).trunc();
-        if excess > 0.0 {
-            inner.release(excess as usize);
-            self.t.set(self.t.get() - excess);
+        let t = (self.t.get() + dt * self.rate as f32).min((inner.len()) as f32);
+        inner.release(t as usize);
+        self.t.set(t.fract());
+    }
+}
+
+impl Signal for Receiver {
+    // This could be made generic if needed.
+    type Frame = Sample;
+
+    fn sample(&self, interval: f32, out: &mut [Sample]) {
+        unsafe {
+            (*self.inner.get()).update();
         }
+        let s0 = self.t.get();
+        let ds = interval * self.rate as f32;
+
+        for (i, o) in out.iter_mut().enumerate() {
+            *o = self.sample_single(s0 + ds * i as f32);
+        }
+        self.advance(interval * out.len() as f32);
     }
 
     #[inline]
@@ -120,41 +111,21 @@ impl Signal for Receiver {
 mod tests {
     use super::*;
 
-    fn assert_seq(recv: &Receiver, start: f32, seq: &[f32]) {
-        let mut buf = [0.0];
-        for (i, &expected) in seq.iter().enumerate() {
-            recv.sample(start + i as f32, 1.0, &mut buf);
-            let actual = buf[0];
-            if expected != actual {
-                panic!(
-                    "expected {:?} from {}, got {:?} from {}",
-                    seq,
-                    start,
-                    unsafe { &*recv.inner.get() },
-                    -recv.t.get()
-                );
-            }
-        }
+    fn assert_out(stream: &Receiver, expected: &[Sample]) {
+        let mut output = vec![0.0; expected.len()];
+        stream.sample(1.0, &mut output);
+        assert_eq!(output, expected);
     }
 
     #[test]
-    fn release_old() {
-        let (mut send, recv) = stream(1, 4, 4);
-        assert_eq!(send.write(&[1.0, 2.0, 3.0]), 3);
-        assert_eq!(send.write(&[4.0, 5.0]), 2);
-        recv.sample(0.0, 1.0, &mut []); // Trigger update
-        assert_seq(&recv, -1.0, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
-
-        recv.advance(1.0);
-        assert_seq(&recv, -2.0, &[0.0, 1.0, 2.0, 3.0]);
-
-        // 1.0 drops off the back
-        recv.advance(4.0);
-        assert_seq(&recv, -5.0, &[0.0, 2.0]);
-
-        // Only 4 slots available to the writer
-        assert_eq!(send.write(&[6.0, 7.0, 8.0, 9.0, 10.0]), 4);
-        recv.sample(0.0, 1.0, &mut []); // Trigger update
-        assert_seq(&recv, -1.0, &[5.0, 6.0, 7.0, 8.0, 9.0, 0.0]);
+    fn smoke() {
+        let (mut send, recv) = stream(1, 3);
+        assert_eq!(send.write(&[1.0, 2.0]), 2);
+        assert_eq!(send.write(&[3.0, 4.0]), 1);
+        assert_out(&recv, &[1.0, 2.0, 3.0, 0.0, 0.0]);
+        assert_eq!(send.write(&[5.0, 6.0, 7.0, 8.0]), 3);
+        assert_out(&recv, &[5.0]);
+        assert_out(&recv, &[6.0, 7.0, 0.0, 0.0]);
+        assert_out(&recv, &[0.0, 0.0]);
     }
 }

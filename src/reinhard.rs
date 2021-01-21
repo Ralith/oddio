@@ -23,17 +23,13 @@ where
 {
     type Frame = T::Frame;
 
-    fn sample(&self, offset: f32, sample_length: f32, out: &mut [T::Frame]) {
-        self.0.sample(offset, sample_length, out);
+    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+        self.0.sample(interval, out);
         for x in out {
             for channel in x.channels_mut() {
                 *channel /= 1.0 + channel.abs();
             }
         }
-    }
-
-    fn advance(&self, dt: f32) {
-        self.0.advance(dt);
     }
 
     fn remaining(&self) -> f32 {
