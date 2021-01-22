@@ -79,7 +79,11 @@ impl<T: Frame + Copy> Frames<T> {
         self.rate as u32
     }
 
-    fn sample(&self, s: f64) -> T {
+    /// Interpolate a frame for position `s`
+    ///
+    /// Note that `s` is in samples, not seconds. Whole numbers are always an exact sample, and
+    /// out-of-range positions yield 0.
+    pub fn interpolate(&self, s: f64) -> T {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
@@ -142,7 +146,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
         let s0 = self.t.get() * self.data.rate;
         let ds = f64::from(interval) * self.data.rate;
         for (i, o) in out.iter_mut().enumerate() {
-            *o = self.data.sample(s0 + ds * i as f64);
+            *o = self.data.interpolate(s0 + ds * i as f64);
         }
         self.t
             .set(self.t.get() + f64::from(interval) * out.len() as f64);
