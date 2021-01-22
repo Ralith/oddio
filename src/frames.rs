@@ -75,12 +75,10 @@ impl<T: Frame + Copy> Frames<T> {
     }
 
     /// Number of samples per second
-    #[inline]
     pub fn rate(&self) -> u32 {
         self.rate as u32
     }
 
-    #[inline]
     fn sample(&self, s: f64) -> T {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
@@ -90,7 +88,6 @@ impl<T: Frame + Copy> Frames<T> {
         frame::lerp(&a, &b, fract)
     }
 
-    #[inline]
     fn get(&self, sample: isize) -> T {
         if sample < 0 {
             return T::ZERO;
@@ -121,7 +118,7 @@ impl<T> DerefMut for Frames<T> {
 pub struct FramesSignal<T> {
     /// Frames to play
     data: Arc<Frames<T>>,
-    /// Position of t=0 in seconds
+    /// Playback position in seconds
     t: Cell<f64>,
 }
 

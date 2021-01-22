@@ -12,10 +12,10 @@ use crate::{flatten_stereo, Gain, Sample};
 /// wait. This includes locks, memory allocation or freeing, and even unbounded compare-and-swap
 /// loops.
 pub trait Signal {
-    /// Type of frames yielded by `get`, e.g. `[Sample; 2]` for stereo.
+    /// Type of frames yielded by `sample`, e.g. `[Sample; 2]` for stereo
     type Frame;
 
-    /// Sample every `interval` seconds starting at `offset` from the cursor.
+    /// Sample every `interval` seconds starting at `offset` from the cursor
     ///
     /// `interval` and `offset` may be negative.
     fn sample(&self, interval: f32, out: &mut [Self::Frame]);

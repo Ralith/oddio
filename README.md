@@ -12,7 +12,7 @@ Oddio is a game-oriented audio library that is:
 ### Example
 
 ```rust
-let (mut scene_handle, scene) = oddio::spatial();
+let (mut scene_handle, scene) = oddio::spatial(sample_rate, 0.1);
 
 // In audio callback:
 let out_frames = oddio::frame_stereo(data);
@@ -20,7 +20,7 @@ oddio::run(&scene, output_sample_rate, out_frames);
 
 // In game logic:
 let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
-let mut handle = scene_handle.play(frames, position, velocity);
+let mut handle = scene_handle.play(frames, position, velocity, 1000.0);
 
 // When position/velocity changes:
 handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
