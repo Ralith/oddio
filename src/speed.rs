@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{Controlled, Filter, Frame, Seek, Signal};
+use crate::{Controlled, Filter, Frame, Signal};
 
 /// Scales rate of playback by a dynamically-adjustable factor
 ///
@@ -41,13 +41,6 @@ impl<T> Filter for Speed<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.inner
-    }
-}
-
-impl<T: Seek> Seek for Speed<T> {
-    fn seek_to(&self, t: f32) {
-        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
-        self.inner.seek_to(t * speed);
     }
 }
 

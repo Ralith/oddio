@@ -3,7 +3,7 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use crate::{frame, Controlled, Filter, Frame, Seek, Signal};
+use crate::{frame, Controlled, Filter, Frame, Signal};
 
 /// Scales amplitude by a dynamically-adjustable factor
 pub struct Gain<T: ?Sized> {
@@ -64,12 +64,6 @@ impl<T> Filter for Gain<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.inner
-    }
-}
-
-impl<T: Seek> Seek for Gain<T> {
-    fn seek_to(&self, t: f32) {
-        self.inner.seek_to(t);
     }
 }
 

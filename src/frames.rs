@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{frame, Frame, Seek, Signal};
+use crate::{frame, Frame, Signal};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -163,12 +163,6 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
 impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
     fn from(samples: Arc<Frames<T>>) -> Self {
         Self::new(samples, 0.0)
-    }
-}
-
-impl<T> Seek for FramesSignal<T> {
-    fn seek_to(&self, t: f32) {
-        self.t.set(t.into());
     }
 }
 
