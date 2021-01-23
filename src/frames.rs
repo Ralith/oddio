@@ -34,6 +34,7 @@ impl<T: Frame + Copy> Frames<T> {
                 .unwrap(),
             )
             .unwrap();
+        let layout = layout.pad_to_align();
         unsafe {
             let mem = alloc::alloc(layout);
             mem.cast::<f64>().write(rate.into());
@@ -60,6 +61,7 @@ impl<T: Frame + Copy> Frames<T> {
                     .unwrap(),
             )
             .unwrap();
+        let layout = layout.pad_to_align();
         unsafe {
             let mem = alloc::alloc(layout);
             mem.cast::<f64>().write(rate.into());
