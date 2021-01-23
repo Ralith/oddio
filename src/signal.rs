@@ -69,18 +69,6 @@ impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
     }
 }
 
-/// A [`Signal`] that can skip around freely in time
-pub trait Seek {
-    /// Set the next [`Signal::sample`] call to start at `t`
-    fn seek_to(&self, t: f32);
-}
-
-impl<T: Seek> Seek for MonoToStereo<T> {
-    fn seek_to(&self, t: f32) {
-        self.0.seek_to(t);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;

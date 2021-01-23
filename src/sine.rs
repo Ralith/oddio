@@ -1,6 +1,6 @@
 use std::{cell::Cell, f32::consts::TAU};
 
-use crate::{Sample, Seek, Signal};
+use crate::{Sample, Signal};
 
 /// A trivial [`Signal`] that produces a sine wave of a particular frequency, forever
 pub struct Sine {
@@ -21,6 +21,12 @@ impl Sine {
             frequency: frequency_hz * TAU,
         }
     }
+
+    fn seek_to(&self, t: f32) {
+        // Advance time, but wrap for numerical stability no matter how long we play for
+        self.phase
+            .set((self.phase.get() + t * self.frequency) % TAU);
+    }
 }
 
 impl Signal for Sine {
@@ -32,13 +38,5 @@ impl Signal for Sine {
             *x = (t * self.frequency + self.phase.get()).sin();
         }
         self.seek_to(interval * out.len() as f32);
-    }
-}
-
-impl Seek for Sine {
-    fn seek_to(&self, t: f32) {
-        // Advance time, but wrap for numerical stability no matter how long we play for
-        self.phase
-            .set((self.phase.get() + t * self.frequency) % TAU);
     }
 }
