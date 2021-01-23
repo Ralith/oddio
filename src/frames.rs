@@ -171,3 +171,15 @@ impl<T> Seek for FramesSignal<T> {
         self.t.set(t.into());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_slice() {
+        const DATA: &[f32] = &[1.0, 2.0, 3.0];
+        let frames = Frames::from_slice(1, DATA);
+        assert_eq!(&frames[..], DATA);
+    }
+}
