@@ -44,6 +44,7 @@ impl<T> Filter for Speed<T> {
     }
 }
 
+/// Thread-safe control for a [`Speed`] filter
 pub struct SpeedControl<'a, T>(&'a Speed<T>);
 
 unsafe impl<'a, T: 'a> Controlled<'a> for Speed<T> {

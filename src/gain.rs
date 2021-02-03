@@ -67,6 +67,7 @@ impl<T> Filter for Gain<T> {
     }
 }
 
+/// Thread-safe control for a [`Gain`] filter
 pub struct GainControl<'a, T>(&'a Gain<T>);
 
 unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {

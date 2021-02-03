@@ -54,7 +54,7 @@ pub use cycle::Cycle;
 pub use filter::*;
 pub use frame::Frame;
 pub use frames::*;
-pub use gain::Gain;
+pub use gain::{Gain, GainControl};
 pub use handle::*;
 pub use mixer::*;
 pub use reinhard::Reinhard;
@@ -62,7 +62,7 @@ use set::*;
 pub use signal::*;
 pub use sine::*;
 pub use spatial::*;
-pub use speed::Speed;
+pub use speed::{Speed, SpeedControl};
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use swap::Swap;
 
