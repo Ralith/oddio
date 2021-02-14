@@ -14,8 +14,8 @@ fn main() {
             (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
         }),
     );
-    let (mut scene_handle, scene) = oddio::spatial(RATE, 0.1);
-    scene_handle.play(
+    let (mut scene_handle, scene) = oddio::Handle::new(oddio::SpatialScene::new(RATE, 0.1));
+    scene_handle.control::<oddio::SpatialScene, _>().play(
         oddio::FramesSignal::from(boop),
         [-SPEED, 10.0, 0.0].into(),
         [SPEED, 0.0, 0.0].into(),

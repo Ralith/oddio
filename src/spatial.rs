@@ -16,91 +16,6 @@ use crate::{
     Controlled, Filter, Handle, Sample, Signal,
 };
 
-/// Create a [`Signal`] for spatializing mono signals for stereo output
-///
-/// Samples its component signals at `rate`. Sampling more than `buffer_duration` seconds at once
-/// may produce audible glitches when sounds exceed the `max_distance` they're constructed with. If
-/// in doubt, 0.1 is a reasonable guess.
-///
-/// The scene can be controlled through [`SpatialSceneHandle`], and the resulting audio is produced by
-/// the [`SpatialScene`] [`Signal`].
-pub fn spatial(rate: u32, buffer_duration: f32) -> (SpatialSceneHandle, SpatialScene) {
-    let (handle, set) = set();
-    let rot = Arc::new(Swap::new(mint::Quaternion {
-        s: 1.0,
-        v: [0.0; 3].into(),
-    }));
-    (
-        SpatialSceneHandle {
-            set: handle,
-            rot: rot.clone(),
-            rate,
-            buffer_duration,
-        },
-        SpatialScene(RefCell::new(Inner { rate, set, rot })),
-    )
-}
-
-/// Handle for modifying a spatial scene
-pub struct SpatialSceneHandle {
-    set: SetHandle<ErasedSpatial>,
-    rot: Arc<Swap<mint::Quaternion<f32>>>,
-    rate: u32,
-    buffer_duration: f32,
-}
-
-impl SpatialSceneHandle {
-    /// Begin playing `signal` at `position`, moving at `velocity`, with accurate propagation delay
-    /// out to `max_distance`
-    ///
-    /// Coordinates should be in world space, translated such that the listener is at the origin,
-    /// but not rotated, with velocity relative to the listener. Units are meters and meters per
-    /// second.
-    ///
-    /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, and
-    /// access other controls.
-    pub fn play<S>(
-        &mut self,
-        signal: S,
-        position: mint::Point3<f32>,
-        velocity: mint::Vector3<f32>,
-        max_distance: f32,
-    ) -> Handle<Spatial<S>>
-    where
-        S: Signal<Frame = Sample> + Send + 'static,
-    {
-        let signal = Spatial::new(
-            self.rate,
-            signal,
-            position,
-            velocity,
-            max_distance / SPEED_OF_SOUND + self.buffer_duration,
-        );
-        let handle = Handle {
-            shared: Arc::new(SignalData {
-                stop: AtomicBool::new(false),
-                signal,
-            }),
-        };
-        self.set.insert(handle.shared.clone());
-        handle
-    }
-
-    /// Set the listener's rotation
-    ///
-    /// An unrotated listener faces -Z, with +X to the right and +Y up.
-    pub fn set_listener_rotation(&mut self, rotation: mint::Quaternion<f32>) {
-        let signal_rotation = invert_quat(&rotation);
-        unsafe {
-            *self.rot.pending() = signal_rotation;
-        }
-        self.rot.flush();
-    }
-}
-
-unsafe impl Send for SpatialSceneHandle {}
-unsafe impl Sync for SpatialSceneHandle {}
-
 type ErasedSpatial = Arc<SignalData<Spatial<dyn Signal<Frame = Sample> + Send>>>;
 
 /// An individual spatialized signal
@@ -186,29 +101,111 @@ impl<'a, T> SpatialControl<'a, T> {
 }
 
 /// [`Signal`] for stereo output from a spatial scene, created by [`spatial`]
-pub struct SpatialScene(RefCell<Inner>);
+pub struct SpatialScene {
+    rate: u32,
+    buffer_duration: f32,
+    send: RefCell<SetHandle<ErasedSpatial>>,
+    rot: Swap<mint::Quaternion<f32>>,
+    recv: RefCell<Set<ErasedSpatial>>,
+}
+
+impl SpatialScene {
+    /// Create a [`Signal`] for spatializing mono signals for stereo output
+    ///
+    /// Samples its component signals at `rate`. Sampling more than `buffer_duration` seconds at once
+    /// may produce audible glitches when sounds exceed the `max_distance` they're constructed with. If
+    /// in doubt, 0.1 is a reasonable guess.
+    pub fn new(rate: u32, buffer_duration: f32) -> Self {
+        let (handle, set) = set();
+        let rot = Swap::new(mint::Quaternion {
+            s: 1.0,
+            v: [0.0; 3].into(),
+        });
+        SpatialScene {
+            rate,
+            buffer_duration,
+            send: RefCell::new(handle),
+            rot,
+            recv: RefCell::new(set),
+        }
+    }
+}
 
 unsafe impl Send for SpatialScene {}
 
-struct Inner {
-    rate: u32,
-    set: Set<ErasedSpatial>,
-    rot: Arc<Swap<mint::Quaternion<f32>>>,
+/// Control for modifying a [`SpatialScene`]
+pub struct SpatialSceneControl<'a>(&'a SpatialScene);
+
+unsafe impl<'a> Controlled<'a> for SpatialScene {
+    type Control = SpatialSceneControl<'a>;
+
+    unsafe fn make_control(signal: &'a SpatialScene) -> Self::Control {
+        SpatialSceneControl(signal)
+    }
+}
+
+impl<'a> SpatialSceneControl<'a> {
+    /// Begin playing `signal` at `position`, moving at `velocity`, with accurate propagation delay
+    /// out to `max_distance`
+    ///
+    /// Coordinates should be in world space, translated such that the listener is at the origin,
+    /// but not rotated, with velocity relative to the listener. Units are meters and meters per
+    /// second.
+    ///
+    /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, and
+    /// access other controls.
+    pub fn play<S>(
+        &mut self,
+        signal: S,
+        position: mint::Point3<f32>,
+        velocity: mint::Vector3<f32>,
+        max_distance: f32,
+    ) -> Handle<Spatial<S>>
+    where
+        S: Signal<Frame = Sample> + Send + 'static,
+    {
+        let signal = Spatial::new(
+            self.0.rate,
+            signal,
+            position,
+            velocity,
+            max_distance / SPEED_OF_SOUND + self.0.buffer_duration,
+        );
+        let handle = Handle {
+            shared: Arc::new(SignalData {
+                stop: AtomicBool::new(false),
+                signal,
+            }),
+        };
+        self.0.send.borrow_mut().insert(handle.shared.clone());
+        handle
+    }
+
+    /// Set the listener's rotation
+    ///
+    /// An unrotated listener faces -Z, with +X to the right and +Y up.
+    pub fn set_listener_rotation(&mut self, rotation: mint::Quaternion<f32>) {
+        let signal_rotation = invert_quat(&rotation);
+        unsafe {
+            *self.0.rot.pending() = signal_rotation;
+        }
+        self.0.rot.flush();
+    }
 }
 
 impl Signal for SpatialScene {
     type Frame = [Sample; 2];
 
     fn sample(&self, interval: f32, out: &mut [[Sample; 2]]) {
-        let this = &mut *self.0.borrow_mut();
+        let set = &mut *self.recv.borrow_mut();
         // Update set contents
-        this.set.update();
+        set.update();
 
         // Update listener rotation
         let (prev_rot, rot) = unsafe {
-            let prev = *this.rot.received();
-            this.rot.refresh();
-            (prev, *this.rot.received())
+            let prev = *self.rot.received();
+            self.rot.refresh();
+            (prev, *self.rot.received())
         };
 
         // Zero output in preparation for mixing
@@ -217,14 +214,14 @@ impl Signal for SpatialScene {
         }
 
         let elapsed = interval * out.len() as f32;
-        for i in (0..this.set.len()).rev() {
-            let data = &this.set[i];
+        for i in (0..set.len()).rev() {
+            let data = &set[i];
             // Discard finished sources
             if data.signal.remaining() < 0.0 {
                 data.stop.store(true, Ordering::Relaxed);
             }
             if data.stop.load(Ordering::Relaxed) {
-                this.set.remove(i);
+                set.remove(i);
                 continue;
             }
 
@@ -236,7 +233,7 @@ impl Signal for SpatialScene {
             spatial
                 .queue
                 .borrow_mut()
-                .write(&spatial.inner, this.rate, elapsed);
+                .write(&spatial.inner, self.rate, elapsed);
 
             // Compute the signal's smoothed start/end positions over the sampled period
             // TODO: Use historical positions
@@ -279,7 +276,7 @@ impl Signal for SpatialScene {
                 for (i, frame) in out.iter_mut().enumerate() {
                     let gain = prev_state.gain + i as f32 * d_gain;
                     let t = prev_offset + i as f32 * dt;
-                    frame[ear as usize] += spatial.queue.borrow().sample(this.rate, t) * gain;
+                    frame[ear as usize] += spatial.queue.borrow().sample(self.rate, t) * gain;
                 }
             }
 

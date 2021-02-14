@@ -1,25 +1,13 @@
 use std::cell::RefCell;
 
-use crate::{frame, set, ErasedSignal, Frame, Handle, Set, SetHandle, Signal};
-
-/// Build a mixer and a handle for controlling it
-pub fn mixer<T: Frame + Copy>() -> (MixerHandle<T>, Mixer<T>) {
-    let (handle, set) = set();
-    (
-        MixerHandle(handle),
-        Mixer(RefCell::new(Inner {
-            set,
-            buffer: vec![T::ZERO; 1024].into(),
-        })),
-    )
-}
+use crate::{frame, set, Controlled, ErasedSignal, Frame, Handle, Set, SetHandle, Signal};
 
 /// Handle for controlling a [`Mixer`] from another thread
 ///
 /// Constructed by calling [`mixer`].
-pub struct MixerHandle<T>(SetHandle<ErasedSignal<T>>);
+pub struct MixerControl<'a, T>(&'a Mixer<T>);
 
-impl<T> MixerHandle<T> {
+impl<T> MixerControl<'_, T> {
     /// Begin playing `signal`, returning a handle controlling its playback
     ///
     /// Finished signals are automatically stopped, and their storage reused for future `play`
@@ -29,15 +17,52 @@ impl<T> MixerHandle<T> {
         S: Signal<Frame = T> + Send + 'static,
     {
         let (handle, erased) = Handle::new(signal);
-        self.0.insert(erased);
+        self.0.send.borrow_mut().insert(erased);
         handle
     }
 }
 
-/// A [`Signal`] that mixes a dynamic set of [`Signal`]s, controlled by a [`MixerHandle`]
+/// A [`Signal`] that mixes a dynamic set of [`Signal`]s
 ///
 /// Constructed by calling [`mixer`].
-pub struct Mixer<T>(RefCell<Inner<T>>);
+pub struct Mixer<T> {
+    send: RefCell<SetHandle<ErasedSignal<T>>>,
+    recv: RefCell<Inner<T>>,
+}
+
+impl<T> Mixer<T>
+where
+    T: Frame + Clone,
+{
+    /// Construct a new mixer
+    pub fn new() -> Self {
+        let (handle, set) = set();
+        Self {
+            send: RefCell::new(handle),
+            recv: RefCell::new(Inner {
+                set,
+                buffer: vec![T::ZERO; 1024].into(),
+            }),
+        }
+    }
+}
+
+impl<T> Default for Mixer<T>
+where
+    T: Frame + Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+unsafe impl<'a, T: 'a> Controlled<'a> for Mixer<T> {
+    type Control = MixerControl<'a, T>;
+
+    unsafe fn make_control(signal: &'a Mixer<T>) -> Self::Control {
+        MixerControl(signal)
+    }
+}
 
 struct Inner<T> {
     set: Set<ErasedSignal<T>>,
@@ -48,7 +73,7 @@ impl<T: Frame> Signal for Mixer<T> {
     type Frame = T;
 
     fn sample(&self, interval: f32, out: &mut [T]) {
-        let this = &mut *self.0.borrow_mut();
+        let this = &mut *self.recv.borrow_mut();
         this.set.update();
 
         for o in out.iter_mut() {

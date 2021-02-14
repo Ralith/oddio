@@ -29,7 +29,8 @@ fn main() {
 
     let speed = 50.0;
 
-    let (mut scene_handle, scene) = oddio::spatial(sample_rate.0, 0.1);
+    let (mut scene_handle, scene) =
+        oddio::Handle::new(oddio::SpatialScene::new(sample_rate.0, 0.1));
 
     let stream = device
         .build_output_stream(
@@ -45,7 +46,7 @@ fn main() {
         .unwrap();
     stream.play().unwrap();
 
-    let mut signal = scene_handle.play(
+    let mut signal = scene_handle.control::<oddio::SpatialScene, _>().play(
         oddio::FramesSignal::from(boop),
         [-speed, 10.0, 0.0].into(),
         [speed, 0.0, 0.0].into(),
