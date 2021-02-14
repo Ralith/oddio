@@ -1,9 +1,6 @@
-use std::{
-    ops::Deref,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 use crate::Signal;
@@ -51,6 +48,9 @@ impl<T> Handle<T> {
 // https://github.com/rust-lang/rust/issues/27732.
 pub struct ErasedSignal<T>(pub(crate) Arc<SignalData<dyn Signal<Frame = T> + Send>>);
 
+// Sound due to restrictions on `unsafe trait Controlled`
+unsafe impl<T> Send for ErasedSignal<T> {}
+
 impl<T> ErasedSignal<T> {
     /// Mark the signal as stopped
     pub fn stop(&self) {
@@ -63,10 +63,13 @@ impl<T> ErasedSignal<T> {
     }
 }
 
-impl<T> Deref for ErasedSignal<T> {
-    type Target = dyn Signal<Frame = T>;
-    fn deref(&self) -> &(dyn Signal<Frame = T> + 'static) {
-        &self.0.signal
+impl<T> Signal for ErasedSignal<T> {
+    type Frame = T;
+    fn sample(&self, interval: f32, out: &mut [Self::Frame]) {
+        self.0.signal.sample(interval, out)
+    }
+    fn remaining(&self) -> f32 {
+        self.0.signal.remaining()
     }
 }
 

@@ -2,7 +2,7 @@
 //!
 //! ```no_run
 //! # let sample_rate = 44100;
-//! let (mut scene_handle, scene) = oddio::spatial(sample_rate, 0.1);
+//! let (mut scene_handle, scene) = oddio::Handle::new(oddio::SpatialScene::new(sample_rate, 0.1));
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];
@@ -16,7 +16,8 @@
 //! # let position = [0.0, 0.0, 0.0].into();
 //! # let velocity = [0.0, 0.0, 0.0].into();
 //! let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
-//! let mut handle = scene_handle.play(frames, position, velocity, 1000.0);
+//! let mut handle = scene_handle.control::<oddio::SpatialScene, _>()
+//!     .play(frames, position, velocity, 1000.0);
 //!
 //! // When position/velocity changes:
 //! handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
@@ -72,7 +73,7 @@ pub type Sample = f32;
 /// Populate `out` with frames from `signal` at `sample_rate`
 ///
 /// Convenience wrapper for [`Signal::sample`].
-pub fn run<S: Signal>(signal: &S, sample_rate: u32, out: &mut [S::Frame]) {
+pub fn run<S: Signal + ?Sized>(signal: &S, sample_rate: u32, out: &mut [S::Frame]) {
     let interval = 1.0 / sample_rate as f32;
     signal.sample(interval, out);
 }
