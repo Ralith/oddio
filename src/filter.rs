@@ -1,6 +1,46 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use crate::Handle;
+/// Handle for manipulating a signal owned elsewhere
+pub struct Handle<T: ?Sized> {
+    shared: Arc<T>,
+}
+
+impl<T: ?Sized> Handle<T> {
+    /// Construct a handle enclosing `signal`
+    ///
+    /// Used to implement signals like [`Mixer`](crate::Mixer).
+    ///
+    /// # Safety
+    ///
+    /// There must never be more than one other `Arc` referencing the same `T`.
+    pub unsafe fn from_arc(signal: Arc<T>) -> Self {
+        Self { shared: signal }
+    }
+
+    /// Get the control for [`Controlled`] signal `S` in a chain of signals
+    ///
+    /// `Index` can usually be inferred.
+    ///
+    /// # Example
+    /// ```
+    /// # use oddio::*;
+    /// fn quiet(signal: &mut Handle<Spatial<Gain<FramesSignal<Sample>>>>) {
+    ///     signal.control::<Gain<_>, _>().set_gain(0.5);
+    /// }
+    /// ```
+    pub fn control<'a, S, Index>(&'a mut self) -> S::Control
+    where
+        T: FilterHaving<S, Index>,
+        S: Controlled<'a>,
+    {
+        let signal: &S = (*self.shared).get();
+        unsafe { S::make_control(signal) }
+    }
+}
+
+// Sound because `T` is not accessible except via `unsafe trait Controlled`
+unsafe impl<T> Send for Handle<T> {}
+unsafe impl<T> Sync for Handle<T> {}
 
 /// A wrapper which transforms a [`Signal`](crate::Signal)
 ///
@@ -8,7 +48,7 @@ use crate::Handle;
 /// example, a `Handle<Spatial<Gain<_>>>` allows both gain and motion state to be updated.
 pub trait Filter {
     /// Type of signal transformed by this filter
-    type Inner;
+    type Inner: ?Sized;
 
     /// Access the inner signal
     fn inner(&self) -> &Self::Inner;
@@ -33,28 +73,6 @@ pub unsafe trait Controlled<'a>: Sized + 'a {
     ///
     /// Must not be invoked while another `Control` for this signal exists
     unsafe fn make_control(signal: &'a Self) -> Self::Control;
-}
-
-impl<T> Handle<T> {
-    /// Get the control for [`Controlled`] signal `S` in a chain of signals
-    ///
-    /// `Index` can usually be inferred.
-    ///
-    /// # Example
-    /// ```
-    /// # use oddio::*;
-    /// fn quiet(signal: &mut Handle<Spatial<Gain<FramesSignal<Sample>>>>) {
-    ///     signal.control::<Gain<_>, _>().set_gain(0.5);
-    /// }
-    /// ```
-    pub fn control<'a, S, Index>(&'a mut self) -> S::Control
-    where
-        T: FilterHaving<S, Index>,
-        S: Controlled<'a>,
-    {
-        let signal: &S = self.shared.signal.get();
-        unsafe { S::make_control(signal) }
-    }
 }
 
 /// Filter chains that contain a `T` at any position
