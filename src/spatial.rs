@@ -1,22 +1,18 @@
 use std::{
     cell::RefCell,
     ops::{Index, IndexMut},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::Arc,
 };
 
 use crate::{
-    handle::SignalData,
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub},
     ring::Ring,
     set::{set, Set, SetHandle},
     swap::Swap,
-    Controlled, Filter, Handle, Sample, Signal,
+    Controlled, Filter, Handle, Sample, Signal, Stop,
 };
 
-type ErasedSpatial = Arc<SignalData<Spatial<dyn Signal<Frame = Sample> + Send>>>;
+type ErasedSpatial = Arc<Spatial<Stop<dyn Signal<Frame = Sample> + Send>>>;
 
 /// An individual spatialized signal
 pub struct Spatial<T: ?Sized> {
@@ -68,7 +64,7 @@ where
     }
 }
 
-impl<T> Filter for Spatial<T> {
+impl<T: ?Sized> Filter for Spatial<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.inner
@@ -152,32 +148,27 @@ impl<'a> SpatialSceneControl<'a> {
     /// but not rotated, with velocity relative to the listener. Units are meters and meters per
     /// second.
     ///
-    /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, and
-    /// access other controls.
+    /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, pause
+    /// or stop it, and access other controls.
     pub fn play<S>(
         &mut self,
         signal: S,
         position: mint::Point3<f32>,
         velocity: mint::Vector3<f32>,
         max_distance: f32,
-    ) -> Handle<Spatial<S>>
+    ) -> Handle<Spatial<Stop<S>>>
     where
         S: Signal<Frame = Sample> + Send + 'static,
     {
-        let signal = Spatial::new(
+        let signal = Arc::new(Spatial::new(
             self.0.rate,
-            signal,
+            Stop::new(signal),
             position,
             velocity,
             max_distance / SPEED_OF_SOUND + self.0.buffer_duration,
-        );
-        let handle = Handle {
-            shared: Arc::new(SignalData {
-                stop: AtomicBool::new(false),
-                signal,
-            }),
-        };
-        self.0.send.borrow_mut().insert(handle.shared.clone());
+        ));
+        let handle = unsafe { Handle::from_arc(signal.clone()) };
+        self.0.send.borrow_mut().insert(signal);
         handle
     }
 
@@ -215,49 +206,50 @@ impl Signal for SpatialScene {
 
         let elapsed = interval * out.len() as f32;
         for i in (0..set.len()).rev() {
-            let data = &set[i];
+            let signal = &set[i];
             // Discard finished sources
-            if data.signal.remaining() < 0.0 {
-                data.stop.store(true, Ordering::Relaxed);
+            if signal.remaining() < 0.0 {
+                signal.inner.stop();
             }
-            if data.stop.load(Ordering::Relaxed) {
+            if signal.inner.is_stopped() {
                 set.remove(i);
                 continue;
             }
+            if signal.inner.is_paused() {
+                continue;
+            }
 
-            let spatial = &data.signal;
-
-            debug_assert!(spatial.max_delay >= elapsed);
+            debug_assert!(signal.max_delay >= elapsed);
 
             // Extend delay queue with new data
-            spatial
+            signal
                 .queue
                 .borrow_mut()
-                .write(&spatial.inner, self.rate, elapsed);
+                .write(&signal.inner, self.rate, elapsed);
 
             // Compute the signal's smoothed start/end positions over the sampled period
             // TODO: Use historical positions
             let prev_position;
             let next_position;
             unsafe {
-                let mut state = spatial.state.borrow_mut();
+                let mut state = signal.state.borrow_mut();
 
                 // Update motion
-                let orig_next = *spatial.motion.received();
-                if spatial.motion.refresh() {
+                let orig_next = *signal.motion.received();
+                if signal.motion.refresh() {
                     state.prev_position = state.smoothed_position(0.0, &orig_next);
                     state.dt = 0.0;
                 } else {
-                    debug_assert_eq!(orig_next.position, (*spatial.motion.received()).position);
+                    debug_assert_eq!(orig_next.position, (*signal.motion.received()).position);
                 }
 
                 prev_position = rotate(
                     &prev_rot,
-                    &state.smoothed_position(0.0, &*spatial.motion.received()),
+                    &state.smoothed_position(0.0, &*signal.motion.received()),
                 );
                 next_position = rotate(
                     &rot,
-                    &state.smoothed_position(elapsed, &*spatial.motion.received()),
+                    &state.smoothed_position(elapsed, &*signal.motion.received()),
                 );
             }
 
@@ -267,8 +259,8 @@ impl Signal for SpatialScene {
                 let next_state = EarState::new(next_position, ear);
 
                 // Clamp into the max length of the delay queue
-                let prev_offset = (prev_state.offset - elapsed).max(-spatial.max_delay);
-                let next_offset = next_state.offset.max(-spatial.max_delay);
+                let prev_offset = (prev_state.offset - elapsed).max(-signal.max_delay);
+                let next_offset = next_state.offset.max(-signal.max_delay);
 
                 let dt = (next_offset - prev_offset) / out.len() as f32;
                 let d_gain = (next_state.gain - prev_state.gain) / out.len() as f32;
@@ -276,12 +268,12 @@ impl Signal for SpatialScene {
                 for (i, frame) in out.iter_mut().enumerate() {
                     let gain = prev_state.gain + i as f32 * d_gain;
                     let t = prev_offset + i as f32 * dt;
-                    frame[ear as usize] += spatial.queue.borrow().sample(self.rate, t) * gain;
+                    frame[ear as usize] += signal.queue.borrow().sample(self.rate, t) * gain;
                 }
             }
 
             // Set up for next time
-            spatial.state.borrow_mut().dt += elapsed;
+            signal.state.borrow_mut().dt += elapsed;
         }
     }
 

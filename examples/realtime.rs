@@ -29,8 +29,7 @@ fn main() {
 
     let speed = 50.0;
 
-    let (mut scene_handle, scene) =
-        oddio::Handle::new(oddio::SpatialScene::new(sample_rate.0, 0.1));
+    let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(sample_rate.0, 0.1));
 
     let stream = device
         .build_output_stream(

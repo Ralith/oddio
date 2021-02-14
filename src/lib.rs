@@ -2,7 +2,7 @@
 //!
 //! ```no_run
 //! # let sample_rate = 44100;
-//! let (mut scene_handle, scene) = oddio::Handle::new(oddio::SpatialScene::new(sample_rate, 0.1));
+//! let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(sample_rate, 0.1));
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];
@@ -37,7 +37,6 @@ mod filter;
 mod frame;
 mod frames;
 mod gain;
-mod handle;
 mod math;
 mod mixer;
 mod reinhard;
@@ -48,6 +47,7 @@ mod sine;
 mod spatial;
 mod speed;
 mod spsc;
+mod stop;
 mod stream;
 mod swap;
 
@@ -56,7 +56,6 @@ pub use filter::*;
 pub use frame::Frame;
 pub use frames::*;
 pub use gain::{Gain, GainControl};
-pub use handle::*;
 pub use mixer::*;
 pub use reinhard::Reinhard;
 use set::*;
@@ -64,6 +63,7 @@ pub use signal::*;
 pub use sine::*;
 pub use spatial::*;
 pub use speed::{Speed, SpeedControl};
+pub use stop::*;
 pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
 pub use swap::Swap;
 
@@ -77,6 +77,37 @@ pub fn run<S: Signal + ?Sized>(signal: &S, sample_rate: u32, out: &mut [S::Frame
     let interval = 1.0 / sample_rate as f32;
     signal.sample(interval, out);
 }
+
+/// Split concurrent controls out of a signal
+///
+/// The [`Handle`] can be used to control the signal concurrent with the [`SplitSignal`] being
+/// played
+pub fn split<S: Signal>(signal: S) -> (Handle<S>, SplitSignal<S>) {
+    let signal = std::sync::Arc::new(signal);
+    let handle = unsafe { Handle::from_arc(signal.clone()) };
+    (handle, SplitSignal(signal))
+}
+
+/// A concurrently controlled [`Signal`]
+pub struct SplitSignal<S: ?Sized>(std::sync::Arc<S>);
+
+impl<S> Signal for SplitSignal<S>
+where
+    S: Signal + ?Sized,
+{
+    type Frame = S::Frame;
+
+    fn sample(&self, interval: f32, out: &mut [Self::Frame]) {
+        self.0.sample(interval, out);
+    }
+
+    fn remaining(&self) -> f32 {
+        self.0.remaining()
+    }
+}
+
+// Safe due to constraints on [`Controlled`]
+unsafe impl<S: ?Sized> Send for SplitSignal<S> {}
 
 /// Convert a slice of interleaved stereo data into a slice of stereo frames
 pub fn frame_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {

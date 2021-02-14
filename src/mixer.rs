@@ -1,6 +1,6 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 
-use crate::{frame, set, Controlled, ErasedSignal, Frame, Handle, Set, SetHandle, Signal};
+use crate::{frame, set, Controlled, Frame, Handle, Set, SetHandle, Signal, Stop};
 
 /// Handle for controlling a [`Mixer`] from another thread
 ///
@@ -8,16 +8,18 @@ use crate::{frame, set, Controlled, ErasedSignal, Frame, Handle, Set, SetHandle,
 pub struct MixerControl<'a, T>(&'a Mixer<T>);
 
 impl<T> MixerControl<'_, T> {
-    /// Begin playing `signal`, returning a handle controlling its playback
+    /// Begin playing `signal`, returning a handle that can be used to pause or stop it and access
+    /// other controls
     ///
     /// Finished signals are automatically stopped, and their storage reused for future `play`
     /// calls.
-    pub fn play<S>(&mut self, signal: S) -> Handle<S>
+    pub fn play<S>(&mut self, signal: S) -> Handle<Stop<S>>
     where
         S: Signal<Frame = T> + Send + 'static,
     {
-        let (handle, erased) = Handle::new(signal);
-        self.0.send.borrow_mut().insert(erased);
+        let signal = Arc::new(Stop::new(signal));
+        let handle = unsafe { Handle::from_arc(signal.clone()) };
+        self.0.send.borrow_mut().insert(signal);
         handle
     }
 }
@@ -89,6 +91,9 @@ impl<T: Frame> Signal for Mixer<T> {
                 this.set.remove(i);
                 continue;
             }
+            if signal.is_paused() {
+                continue;
+            }
 
             // Sample into `buffer`, then mix into `out`
             let mut iter = out.iter_mut();
@@ -103,3 +108,5 @@ impl<T: Frame> Signal for Mixer<T> {
         }
     }
 }
+
+type ErasedSignal<T> = Arc<Stop<dyn Signal<Frame = T>>>;
