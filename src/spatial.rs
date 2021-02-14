@@ -166,7 +166,7 @@ pub struct SpatialControl<'a, T>(&'a Spatial<T>);
 unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
     type Control = SpatialControl<'a, T>;
 
-    fn make_control(signal: &'a Spatial<T>) -> Self::Control {
+    unsafe fn make_control(signal: &'a Spatial<T>) -> Self::Control {
         SpatialControl(signal)
     }
 }

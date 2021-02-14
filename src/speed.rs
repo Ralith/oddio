@@ -50,7 +50,7 @@ pub struct SpeedControl<'a, T>(&'a Speed<T>);
 unsafe impl<'a, T: 'a> Controlled<'a> for Speed<T> {
     type Control = SpeedControl<'a, T>;
 
-    fn make_control(signal: &'a Speed<T>) -> Self::Control {
+    unsafe fn make_control(signal: &'a Speed<T>) -> Self::Control {
         SpeedControl(signal)
     }
 }
