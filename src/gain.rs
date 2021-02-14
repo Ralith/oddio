@@ -73,7 +73,7 @@ pub struct GainControl<'a, T>(&'a Gain<T>);
 unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
     type Control = GainControl<'a, T>;
 
-    fn make_control(signal: &'a Gain<T>) -> Self::Control {
+    unsafe fn make_control(signal: &'a Gain<T>) -> Self::Control {
         GainControl(signal)
     }
 }

@@ -28,7 +28,11 @@ pub unsafe trait Controlled<'a>: Sized + 'a {
     type Control;
 
     /// Construct a `Control` for `signal`
-    fn make_control(signal: &'a Self) -> Self::Control;
+    ///
+    /// # Safety
+    ///
+    /// Must not be invoked while another `Control` for this signal exists
+    unsafe fn make_control(signal: &'a Self) -> Self::Control;
 }
 
 impl<T> Handle<T> {
@@ -49,7 +53,7 @@ impl<T> Handle<T> {
         S: Controlled<'a>,
     {
         let signal: &S = self.shared.signal.get();
-        S::make_control(signal)
+        unsafe { S::make_control(signal) }
     }
 }
 
