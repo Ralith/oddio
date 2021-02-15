@@ -27,7 +27,7 @@
 //! - [`Frames`] stores static audio data, which can be played with a [`FramesSignal`]
 //! - [`Mixer`] allows multiple signals to be played concurrently and controlled during playback
 //! - [`SpatialScene`] is a mixer that spatializes its signals
-//! - [`Handle`] allows manipulation of a signal while it's played on a [`SpatialScene`] or [`Mixer`]
+//! - [`Handle`] allows control of a signal while it's playing, from a mixer or [`split`]
 //! - [`run`] writes frames from a [`Signal`] into an output buffer
 
 #![warn(missing_docs)]
