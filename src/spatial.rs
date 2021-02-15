@@ -96,7 +96,7 @@ impl<'a, T> SpatialControl<'a, T> {
     }
 }
 
-/// [`Signal`] for stereo output from a spatial scene, created by [`spatial`]
+/// [`Signal`] for stereo output from a spatial scene
 pub struct SpatialScene {
     rate: u32,
     buffer_duration: f32,
