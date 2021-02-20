@@ -1,53 +1,37 @@
 //! Streaming audio support
 
-use std::cell::{Cell, UnsafeCell};
+use std::cell::{Cell, RefCell, UnsafeCell};
 
-use crate::{spsc, Sample, Signal};
+use crate::{spsc, Controlled, Sample, Signal};
 
-/// Construct an unbounded stream of dynamic audio
-///
-/// Returns two handles, which can be sent to different threads. This allows the business of
-/// obtaining streaming audio to take place without interfering with the low-latency requirements of
-/// audio output.
-///
-/// - `rate` is the stream's sample rate
-/// - `size` dictates the maximum number of buffered frames
-pub fn stream(rate: u32, size: usize) -> (Sender, Receiver) {
-    let (send, recv) = spsc::channel(size);
-    (
-        Sender { inner: send },
-        Receiver {
-            rate,
-            inner: UnsafeCell::new(recv),
-            t: Cell::new(0.0),
-            closed_for: Cell::new(None),
-        },
-    )
-}
-
-/// Handle for submitting new samples to a stream
-pub struct Sender {
-    inner: spsc::Sender<Sample>,
-}
-
-impl Sender {
-    /// Add more samples. Returns the number of samples read.
-    pub fn write(&mut self, samples: &[Sample]) -> usize {
-        self.inner.send_from_slice(samples)
-    }
-}
-
-/// Handle for sampling from a stream
-pub struct Receiver {
+/// Dynamic audio from an external source
+pub struct Stream {
+    send: RefCell<spsc::Sender<Sample>>,
     rate: u32,
     inner: UnsafeCell<spsc::Receiver<Sample>>,
     /// Offset of t=0 from the start of the buffer, in samples
     t: Cell<f32>,
-    /// Seconds since the stream ended
-    closed_for: Cell<Option<f32>>,
 }
 
-impl Receiver {
+impl Stream {
+    /// Construct a stream of dynamic audio
+    ///
+    /// Samples can be appended to the stream through its [`Handle`](crate::Handle). This allows the
+    /// business of obtaining streaming audio, e.g. from a streaming decoder or the network, to take
+    /// place without interfering with the low-latency requirements of audio output.
+    ///
+    /// - `rate` is the stream's sample rate
+    /// - `size` dictates the maximum number of buffered frames
+    pub fn new(rate: u32, size: usize) -> Self {
+        let (send, recv) = spsc::channel(size);
+        Self {
+            send: RefCell::new(send),
+            rate,
+            inner: UnsafeCell::new(recv),
+            t: Cell::new(0.0),
+        }
+    }
+
     #[inline]
     fn get(&self, sample: isize) -> f32 {
         if sample < 0 {
@@ -71,12 +55,6 @@ impl Receiver {
     }
 
     fn advance(&self, dt: f32) {
-        let is_closed = unsafe { (*self.inner.get()).is_closed() };
-        if is_closed {
-            self.closed_for
-                .set(Some(self.closed_for.get().unwrap_or(0.0) + dt));
-            return;
-        }
         let inner = unsafe { &mut *self.inner.get() };
         let t = (self.t.get() + dt * self.rate as f32).min((inner.len()) as f32);
         inner.release(t as usize);
@@ -84,7 +62,7 @@ impl Receiver {
     }
 }
 
-impl Signal for Receiver {
+impl Signal for Stream {
     // This could be made generic if needed.
     type Frame = Sample;
 
@@ -103,7 +81,25 @@ impl Signal for Receiver {
 
     #[inline]
     fn remaining(&self) -> f32 {
-        self.closed_for.get().map_or(f32::INFINITY, |x| -x)
+        f32::INFINITY
+    }
+}
+
+/// Thread-safe control for a [`Stream`]
+pub struct StreamControl<'a>(&'a Stream);
+
+unsafe impl<'a> Controlled<'a> for Stream {
+    type Control = StreamControl<'a>;
+
+    unsafe fn make_control(signal: &'a Stream) -> Self::Control {
+        StreamControl(signal)
+    }
+}
+
+impl<'a> StreamControl<'a> {
+    /// Add more samples. Returns the number of samples read.
+    pub fn write(&mut self, samples: &[Sample]) -> usize {
+        self.0.send.borrow_mut().send_from_slice(samples)
     }
 }
 
@@ -111,7 +107,7 @@ impl Signal for Receiver {
 mod tests {
     use super::*;
 
-    fn assert_out(stream: &Receiver, expected: &[Sample]) {
+    fn assert_out(stream: &Stream, expected: &[Sample]) {
         let mut output = vec![0.0; expected.len()];
         stream.sample(1.0, &mut output);
         assert_eq!(output, expected);
@@ -119,13 +115,13 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let (mut send, recv) = stream(1, 3);
-        assert_eq!(send.write(&[1.0, 2.0]), 2);
-        assert_eq!(send.write(&[3.0, 4.0]), 1);
-        assert_out(&recv, &[1.0, 2.0, 3.0, 0.0, 0.0]);
-        assert_eq!(send.write(&[5.0, 6.0, 7.0, 8.0]), 3);
-        assert_out(&recv, &[5.0]);
-        assert_out(&recv, &[6.0, 7.0, 0.0, 0.0]);
-        assert_out(&recv, &[0.0, 0.0]);
+        let s = Stream::new(1, 3);
+        assert_eq!(StreamControl(&s).write(&[1.0, 2.0]), 2);
+        assert_eq!(StreamControl(&s).write(&[3.0, 4.0]), 1);
+        assert_out(&s, &[1.0, 2.0, 3.0, 0.0, 0.0]);
+        assert_eq!(StreamControl(&s).write(&[5.0, 6.0, 7.0, 8.0]), 3);
+        assert_out(&s, &[5.0]);
+        assert_out(&s, &[6.0, 7.0, 0.0, 0.0]);
+        assert_out(&s, &[0.0, 0.0]);
     }
 }

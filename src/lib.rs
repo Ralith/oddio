@@ -64,7 +64,7 @@ pub use sine::*;
 pub use spatial::*;
 pub use speed::{Speed, SpeedControl};
 pub use stop::*;
-pub use stream::{stream, Receiver as StreamReceiver, Sender as StreamSender};
+pub use stream::{Stream, StreamControl};
 pub use swap::Swap;
 
 /// Unitless instantaneous sound wave amplitude measurement
