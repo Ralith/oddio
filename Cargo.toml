@@ -8,6 +8,9 @@ repository = "https://github.com/Ralith/oddio"
 description = "Lightweight game audio library"
 categories = ["multimedia::audio", "game-development"]
 
+[badges]
+maintenance = { status = "actively-developed" }
+
 [dependencies]
 mint = "0.5.5"
 
