@@ -1,6 +1,9 @@
 use std::{marker::PhantomData, sync::Arc};
 
 /// Handle for manipulating a signal owned elsewhere
+///
+/// Handle types are typically verbose. Consider using type aliases or newtypes as shorthand for
+/// those that arise commonly in your application.
 pub struct Handle<T: ?Sized> {
     shared: Arc<T>,
 }
