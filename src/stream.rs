@@ -1,6 +1,6 @@
 //! Streaming audio support
 
-use std::cell::{Cell, RefCell, UnsafeCell};
+use std::cell::{Cell, RefCell};
 
 use crate::{spsc, Controlled, Sample, Signal};
 
@@ -8,7 +8,7 @@ use crate::{spsc, Controlled, Sample, Signal};
 pub struct Stream {
     send: RefCell<spsc::Sender<Sample>>,
     rate: u32,
-    inner: UnsafeCell<spsc::Receiver<Sample>>,
+    inner: RefCell<spsc::Receiver<Sample>>,
     /// Offset of t=0 from the start of the buffer, in samples
     t: Cell<f32>,
 }
@@ -27,7 +27,7 @@ impl Stream {
         Self {
             send: RefCell::new(send),
             rate,
-            inner: UnsafeCell::new(recv),
+            inner: RefCell::new(recv),
             t: Cell::new(0.0),
         }
     }
@@ -38,7 +38,7 @@ impl Stream {
             return 0.0;
         }
         let sample = sample as usize;
-        let inner = unsafe { &mut *self.inner.get() };
+        let inner = self.inner.borrow();
         if sample >= inner.len() {
             return 0.0;
         }
@@ -55,7 +55,7 @@ impl Stream {
     }
 
     fn advance(&self, dt: f32) {
-        let inner = unsafe { &mut *self.inner.get() };
+        let mut inner = self.inner.borrow_mut();
         let t = (self.t.get() + dt * self.rate as f32).min((inner.len()) as f32);
         inner.release(t as usize);
         self.t.set(t.fract());
@@ -67,9 +67,7 @@ impl Signal for Stream {
     type Frame = Sample;
 
     fn sample(&self, interval: f32, out: &mut [Sample]) {
-        unsafe {
-            (*self.inner.get()).update();
-        }
+        self.inner.borrow_mut().update();
         let s0 = self.t.get();
         let ds = interval * self.rate as f32;
 
