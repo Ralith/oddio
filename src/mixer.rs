@@ -13,6 +13,9 @@ impl<T> MixerControl<'_, T> {
     ///
     /// Finished signals are automatically stopped, and their storage reused for future `play`
     /// calls.
+    ///
+    /// The type of signal given determines what other additional controls can be used. See the
+    /// examples for a detailed guide.
     pub fn play<S>(&mut self, signal: S) -> Handle<Stop<S>>
     where
         S: Signal<Frame = T> + Send + 'static,
