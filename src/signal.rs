@@ -1,4 +1,4 @@
-use crate::{flatten_stereo, Gain, Sample};
+use crate::{flatten_stereo, Sample};
 
 /// An audio signal
 ///
@@ -27,30 +27,17 @@ pub trait Signal {
     fn remaining(&self) -> f32 {
         f32::INFINITY
     }
-
-    //
-    // Helpers
-    //
-
-    /// Convert a signal from mono to stereo by duplicating its output across both channels
-    fn into_stereo(self) -> MonoToStereo<Self>
-    where
-        Self: Signal<Frame = Sample> + Sized,
-    {
-        MonoToStereo(self)
-    }
-
-    /// Apply a dynamic gain control
-    fn with_gain(self) -> Gain<Self>
-    where
-        Self: Sized,
-    {
-        Gain::new(self)
-    }
 }
 
-/// Adapt a mono signal to output stereo by duplicating its output
-pub struct MonoToStereo<T>(pub T);
+/// Adapts a mono signal to output stereo by duplicating its output
+pub struct MonoToStereo<T>(T);
+
+impl<T> MonoToStereo<T> {
+    /// Adapt `signal` from mono to stereo
+    pub fn new(signal: T) -> Self {
+        Self(signal)
+    }
+}
 
 impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
     type Frame = [Sample; 2];
@@ -90,7 +77,7 @@ mod tests {
 
     #[test]
     fn mono_to_stereo() {
-        let signal = CountingSignal(Cell::new(0)).into_stereo();
+        let signal = MonoToStereo::new(CountingSignal(Cell::new(0)));
         let mut buf = [[0.0; 2]; 4];
         signal.sample(1.0, (&mut buf[..]).into());
         assert_eq!(buf, [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]);
