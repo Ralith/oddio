@@ -24,7 +24,7 @@ fn main() {
     let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(sample_rate.0, 0.1));
 
     // We send `scene` into this closure, where changes to `scene_handle` are reflected.
-    // from here on out, `scene_handle` is how we play audio and apply filters to it.
+    // `scene_handle` is how we add new sounds and modify the scene live.
     let stream = device
         .build_output_stream(
             &config,
@@ -40,8 +40,8 @@ fn main() {
     stream.play().unwrap();
 
     // Let's make some audio.
-    // Here, we're just manually constructing a stream of sounds.
-    // in `oddio`, a sound like this is called `Frames` (each sample being a `Frame`).
+    // Here, we're manually constructing a sound, which might otherwise be e.g. decoded from an mp3.
+    // in `oddio`, a sound like this is called `Frames` (each frame consisting of one sample per channel).
     let boop = oddio::Frames::from_iter(
         sample_rate.0,
         // Generate a simple sine wave
@@ -54,11 +54,11 @@ fn main() {
     // We need to create a `FramesSignal`. This is the basic type we need to play a `Frames`.
     // We can create the most basic `FramesSignal` like this:
     let basic_signal: oddio::FramesSignal<_> = oddio::FramesSignal::from(boop);
-    // or we could have made it at 5 seconds in like this:
+    // or we could start 5 seconds in like this:
     // let basic_signal = oddio::FramesSignal::new(boop, 5.0);
 
     // We can also add filters around our `FramesSignal` to make our sound more controllable.
-    // A common one is `Gain`, which lets us modulate the gain (how loud) the Signal is.
+    // A common one is `Gain`, which lets us modulate the gain of the `Signal` (how loud it is)
     // We also could make this with `.with_gain` if `oddio::Signal` is brought into scope.
     let gain = oddio::Gain::new(basic_signal);
 
@@ -100,7 +100,7 @@ fn main() {
         // We also could adjust the Gain here in the same way:
         let mut gain_control = signal.control::<oddio::Gain<_>, _>();
 
-        // Just leave the gain at it's basic volume. (sorry this can be a bit loud!)
+        // Just leave the gain at its natural volume. (sorry this can be a bit loud!)
         gain_control.set_gain(1.0);
     }
 }
