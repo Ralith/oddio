@@ -76,11 +76,6 @@ impl Signal for Stream {
         }
         self.advance(interval * out.len() as f32);
     }
-
-    #[inline]
-    fn remaining(&self) -> f32 {
-        f32::INFINITY
-    }
 }
 
 /// Thread-safe control for a [`Stream`]
