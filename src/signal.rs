@@ -15,9 +15,7 @@ pub trait Signal {
     /// Type of frames yielded by `sample`, e.g. `[Sample; 2]` for stereo
     type Frame;
 
-    /// Sample every `interval` seconds starting at `offset` from the cursor
-    ///
-    /// `interval` and `offset` may be negative.
+    /// Sample frames separated by `interval` seconds each
     fn sample(&self, interval: f32, out: &mut [Self::Frame]);
 
     /// Seconds until data runs out
