@@ -150,6 +150,9 @@ impl<'a> SpatialSceneControl<'a> {
     ///
     /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, pause
     /// or stop it, and access other controls.
+    ///
+    /// The type of signal given determines what additional controls can be used. See the
+    /// examples for a detailed guide.
     pub fn play<S>(
         &mut self,
         signal: S,
