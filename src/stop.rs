@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    any::Any,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use crate::{Controlled, Filter, Signal};
 
@@ -62,17 +65,17 @@ impl<T> Filter for Stop<T> {
 
 /// Thread-safe control for a [`Stop`] filter
 #[derive(Copy, Clone)]
-pub struct StopControl<'a, T>(&'a Stop<T>);
+pub struct StopControl<'a>(&'a Stop<dyn Any>);
 
-unsafe impl<'a, T: 'a> Controlled<'a> for Stop<T> {
-    type Control = StopControl<'a, T>;
+unsafe impl<'a, T: 'static> Controlled<'a> for Stop<T> {
+    type Control = StopControl<'a>;
 
     unsafe fn make_control(signal: &'a Stop<T>) -> Self::Control {
         StopControl(signal)
     }
 }
 
-impl<'a, T> StopControl<'a, T> {
+impl<'a> StopControl<'a> {
     /// Suspend playback of the source
     pub fn pause(&self) {
         self.0.state.store(PAUSE, Ordering::Relaxed);

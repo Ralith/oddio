@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     cell::RefCell,
     ops::{Index, IndexMut},
     sync::Arc,
@@ -72,17 +73,17 @@ impl<T: ?Sized> Filter for Spatial<T> {
 }
 
 /// Control for updating the motion of a spatial signal
-pub struct SpatialControl<'a, T>(&'a Spatial<T>);
+pub struct SpatialControl<'a>(&'a Spatial<dyn Any>);
 
-unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
-    type Control = SpatialControl<'a, T>;
+unsafe impl<'a, T: 'static> Controlled<'a> for Spatial<T> {
+    type Control = SpatialControl<'a>;
 
     unsafe fn make_control(signal: &'a Spatial<T>) -> Self::Control {
         SpatialControl(signal)
     }
 }
 
-impl<'a, T> SpatialControl<'a, T> {
+impl<'a> SpatialControl<'a> {
     /// Update the position and velocity of the signal
     ///
     /// Coordinates should be in world space, translated such that the listener is at the origin,

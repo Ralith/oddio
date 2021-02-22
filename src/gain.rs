@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     cell::Cell,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -68,17 +69,17 @@ impl<T> Filter for Gain<T> {
 }
 
 /// Thread-safe control for a [`Gain`] filter
-pub struct GainControl<'a, T>(&'a Gain<T>);
+pub struct GainControl<'a>(&'a Gain<dyn Any>);
 
-unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
-    type Control = GainControl<'a, T>;
+unsafe impl<'a, T: 'static> Controlled<'a> for Gain<T> {
+    type Control = GainControl<'a>;
 
     unsafe fn make_control(signal: &'a Gain<T>) -> Self::Control {
         GainControl(signal)
     }
 }
 
-impl<'a, T> GainControl<'a, T> {
+impl<'a> GainControl<'a> {
     /// Get the current gain
     pub fn gain(&self) -> f32 {
         f32::from_bits(self.0.shared.load(Ordering::Relaxed))
