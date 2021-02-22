@@ -21,9 +21,12 @@ pub struct Frames<T> {
     samples: [T],
 }
 
-impl<T: Frame + Copy> Frames<T> {
+impl<T> Frames<T> {
     /// Construct samples from existing memory
-    pub fn from_slice(rate: u32, samples: &[T]) -> Arc<Self> {
+    pub fn from_slice(rate: u32, samples: &[T]) -> Arc<Self>
+    where
+        T: Copy,
+    {
         let header_layout = alloc::Layout::new::<f64>();
         let (layout, payload_offset) = header_layout
             .extend(
@@ -85,7 +88,10 @@ impl<T: Frame + Copy> Frames<T> {
     ///
     /// Note that `s` is in samples, not seconds. Whole numbers are always an exact sample, and
     /// out-of-range positions yield 0.
-    pub fn interpolate(&self, s: f64) -> T {
+    pub fn interpolate(&self, s: f64) -> T
+    where
+        T: Frame + Copy,
+    {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
@@ -94,7 +100,10 @@ impl<T: Frame + Copy> Frames<T> {
         frame::lerp(&a, &b, fract)
     }
 
-    fn get(&self, sample: isize) -> T {
+    fn get(&self, sample: isize) -> T
+    where
+        T: Frame + Copy,
+    {
         if sample < 0 {
             return T::ZERO;
         }
