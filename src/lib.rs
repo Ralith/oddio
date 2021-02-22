@@ -110,6 +110,8 @@ where
 unsafe impl<S: ?Sized> Send for SplitSignal<S> {}
 
 /// Convert a slice of interleaved stereo data into a slice of stereo frames
+///
+/// Useful for adapting output buffers obtained externally.
 pub fn frame_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {
     unsafe { std::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() / 2) }
 }
