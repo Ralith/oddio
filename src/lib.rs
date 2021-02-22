@@ -51,7 +51,7 @@ mod stop;
 mod stream;
 mod swap;
 
-pub use cycle::Cycle;
+pub use cycle::{Cycle, CycleControl};
 pub use filter::*;
 pub use frame::Frame;
 pub use frames::*;
