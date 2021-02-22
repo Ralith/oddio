@@ -3,8 +3,6 @@ use std::{cell::RefCell, sync::Arc};
 use crate::{frame, set, Controlled, Frame, Handle, Set, SetHandle, Signal, Stop};
 
 /// Handle for controlling a [`Mixer`] from another thread
-///
-/// Constructed by calling [`mixer`].
 pub struct MixerControl<'a, T>(&'a Mixer<T>);
 
 impl<T> MixerControl<'_, T> {
@@ -28,8 +26,6 @@ impl<T> MixerControl<'_, T> {
 }
 
 /// A [`Signal`] that mixes a dynamic set of [`Signal`]s
-///
-/// Constructed by calling [`mixer`].
 pub struct Mixer<T> {
     send: RefCell<SetHandle<ErasedSignal<T>>>,
     recv: RefCell<Inner<T>>,
