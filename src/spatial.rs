@@ -144,6 +144,9 @@ impl<'a> SpatialSceneControl<'a> {
     /// Begin playing `signal` at `position`, moving at `velocity`, with accurate propagation delay
     /// out to `max_distance`
     ///
+    /// Note that `signal` must be single-channel. Signals in a spatial scene are modeled as
+    /// isotropic point sources, and cannot sensibly emit multichannel audio.
+    ///
     /// Coordinates should be in world space, translated such that the listener is at the origin,
     /// but not rotated, with velocity relative to the listener. Units are meters and meters per
     /// second.
