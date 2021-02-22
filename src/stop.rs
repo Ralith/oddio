@@ -1,7 +1,4 @@
-use std::{
-    any::Any,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{Controlled, Filter, Signal};
 
@@ -65,39 +62,39 @@ impl<T> Filter for Stop<T> {
 
 /// Thread-safe control for a [`Stop`] filter
 #[derive(Copy, Clone)]
-pub struct StopControl<'a>(&'a Stop<dyn Any>);
+pub struct StopControl<'a>(&'a AtomicUsize);
 
-unsafe impl<'a, T: 'static> Controlled<'a> for Stop<T> {
+unsafe impl<'a, T: 'a> Controlled<'a> for Stop<T> {
     type Control = StopControl<'a>;
 
     unsafe fn make_control(signal: &'a Stop<T>) -> Self::Control {
-        StopControl(signal)
+        StopControl(&signal.state)
     }
 }
 
 impl<'a> StopControl<'a> {
     /// Suspend playback of the source
     pub fn pause(&self) {
-        self.0.state.store(PAUSE, Ordering::Relaxed);
+        self.0.store(PAUSE, Ordering::Relaxed);
     }
 
     /// Resume the paused source
     pub fn resume(&self) {
-        self.0.state.store(PLAY, Ordering::Relaxed);
+        self.0.store(PLAY, Ordering::Relaxed);
     }
 
     /// Stop the source for good
     pub fn stop(&self) {
-        self.0.state.store(STOP, Ordering::Relaxed);
+        self.0.store(STOP, Ordering::Relaxed);
     }
 
     /// Whether the source is paused
     pub fn is_paused(&self) -> bool {
-        self.0.state.load(Ordering::Relaxed) == PAUSE
+        self.0.load(Ordering::Relaxed) == PAUSE
     }
 
     /// Whether the source has stopped
     pub fn is_stopped(&self) -> bool {
-        self.0.state.load(Ordering::Relaxed) == STOP
+        self.0.load(Ordering::Relaxed) == STOP
     }
 }

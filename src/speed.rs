@@ -1,7 +1,4 @@
-use std::{
-    any::Any,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::{Controlled, Filter, Frame, Signal};
 
@@ -48,24 +45,24 @@ impl<T> Filter for Speed<T> {
 }
 
 /// Thread-safe control for a [`Speed`] filter
-pub struct SpeedControl<'a>(&'a Speed<dyn Any>);
+pub struct SpeedControl<'a>(&'a AtomicU32);
 
-unsafe impl<'a, T: 'static> Controlled<'a> for Speed<T> {
+unsafe impl<'a, T: 'a> Controlled<'a> for Speed<T> {
     type Control = SpeedControl<'a>;
 
     unsafe fn make_control(signal: &'a Speed<T>) -> Self::Control {
-        SpeedControl(signal)
+        SpeedControl(&signal.speed)
     }
 }
 
 impl<'a> SpeedControl<'a> {
     /// Get the current speed
     pub fn speed(&self) -> f32 {
-        f32::from_bits(self.0.speed.load(Ordering::Relaxed))
+        f32::from_bits(self.0.load(Ordering::Relaxed))
     }
 
     /// Adjust the speed
     pub fn set_speed(&mut self, factor: f32) {
-        self.0.speed.store(factor.to_bits(), Ordering::Relaxed);
+        self.0.store(factor.to_bits(), Ordering::Relaxed);
     }
 }

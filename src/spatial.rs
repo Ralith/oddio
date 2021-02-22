@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     cell::RefCell,
     ops::{Index, IndexMut},
     sync::Arc,
@@ -73,13 +72,13 @@ impl<T: ?Sized> Filter for Spatial<T> {
 }
 
 /// Control for updating the motion of a spatial signal
-pub struct SpatialControl<'a>(&'a Spatial<dyn Any>);
+pub struct SpatialControl<'a>(&'a Swap<Motion>);
 
-unsafe impl<'a, T: 'static> Controlled<'a> for Spatial<T> {
+unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
     type Control = SpatialControl<'a>;
 
     unsafe fn make_control(signal: &'a Spatial<T>) -> Self::Control {
-        SpatialControl(signal)
+        SpatialControl(&signal.motion)
     }
 }
 
@@ -91,9 +90,9 @@ impl<'a> SpatialControl<'a> {
     /// second.
     pub fn set_motion(&mut self, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) {
         unsafe {
-            *self.0.motion.pending() = Motion { position, velocity };
+            *self.0.pending() = Motion { position, velocity };
         }
-        self.0.motion.flush();
+        self.0.flush();
     }
 }
 

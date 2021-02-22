@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     cell::Cell,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -69,25 +68,25 @@ impl<T> Filter for Gain<T> {
 }
 
 /// Thread-safe control for a [`Gain`] filter
-pub struct GainControl<'a>(&'a Gain<dyn Any>);
+pub struct GainControl<'a>(&'a AtomicU32);
 
-unsafe impl<'a, T: 'static> Controlled<'a> for Gain<T> {
+unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
     type Control = GainControl<'a>;
 
     unsafe fn make_control(signal: &'a Gain<T>) -> Self::Control {
-        GainControl(signal)
+        GainControl(&signal.shared)
     }
 }
 
 impl<'a> GainControl<'a> {
     /// Get the current gain
     pub fn gain(&self) -> f32 {
-        f32::from_bits(self.0.shared.load(Ordering::Relaxed))
+        f32::from_bits(self.0.load(Ordering::Relaxed))
     }
 
     /// Adjust the gain
     pub fn set_gain(&mut self, factor: f32) {
-        self.0.shared.store(factor.to_bits(), Ordering::Relaxed);
+        self.0.store(factor.to_bits(), Ordering::Relaxed);
     }
 }
 
@@ -116,7 +115,7 @@ mod tests {
     fn smoothing() {
         let s = Gain::new(Const);
         let mut buf = [0.0; 6];
-        GainControl(&s).set_gain(5.0);
+        GainControl(&s.shared).set_gain(5.0);
         s.sample(0.025, &mut buf);
         assert_eq!(buf, [1.0, 2.0, 3.0, 4.0, 5.0, 5.0]);
         s.sample(0.025, &mut buf);
