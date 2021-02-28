@@ -1,13 +1,14 @@
 use std::{
-    alloc,
-    cell::Cell,
-    mem,
+    alloc, mem,
     ops::{Deref, DerefMut},
     ptr,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
-use crate::{frame, Frame, Signal};
+use crate::{frame, Controlled, Frame, Signal};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -134,7 +135,7 @@ pub struct FramesSignal<T> {
     /// Frames to play
     data: Arc<Frames<T>>,
     /// Playback position in seconds
-    t: Cell<f64>,
+    t: AtomicF64,
 }
 
 impl<T> FramesSignal<T> {
@@ -143,7 +144,7 @@ impl<T> FramesSignal<T> {
     /// `start_seconds` adjusts the initial playback position, and may be negative.
     pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> Self {
         Self {
-            t: Cell::new(start_seconds),
+            t: AtomicF64::new(start_seconds),
             data,
         }
     }
@@ -175,6 +176,65 @@ impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
     }
 }
 
+/// Thread-safe control for a [`FramesSignal`], giving access to current playback location.
+pub struct FramesSignalControl<'a, T>(&'a FramesSignal<T>);
+
+unsafe impl<'a, T: 'a> Controlled<'a> for FramesSignal<T> {
+    type Control = FramesSignalControl<'a, T>;
+
+    unsafe fn make_control(signal: &'a FramesSignal<T>) -> Self::Control {
+        FramesSignalControl(signal)
+    }
+}
+
+impl<'a, T> FramesSignalControl<'a, T> {
+    /// Get the current playback position.
+    ///
+    /// This number may be negative if the starting time was negative,
+    /// and it may be longer than the duration of the sample as well.
+    pub fn playback_position(&self) -> f64 {
+        self.0.t.get()
+    }
+
+    /// Sets the current playback position in seconds.
+    ///
+    /// This number may be negative.
+    pub fn set_playback_position(&mut self, value: f64) {
+        self.0.t.set(value);
+    }
+}
+
+/// An f64 encoded in a u64.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+struct AtomicF64(AtomicU64);
+
+impl AtomicF64 {
+    /// Creates  a new AtomicF64
+    pub fn new(input: f64) -> Self {
+        AtomicF64(AtomicU64::new(input.to_bits()))
+    }
+
+    /// Loads the f64
+    pub fn get(&self) -> f64 {
+        let inner = self.0.load(Ordering::Relaxed);
+        f64::from_bits(inner)
+    }
+
+    /// Stores an f64
+    pub fn set(&self, value: f64) {
+        let inner = value.to_bits();
+        self.0.store(inner, Ordering::Relaxed);
+    }
+}
+
+impl Clone for AtomicF64 {
+    fn clone(&self) -> Self {
+        let value = self.0.load(Ordering::Relaxed);
+        Self(AtomicU64::new(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,5 +244,32 @@ mod tests {
         const DATA: &[f32] = &[1.0, 2.0, 3.0];
         let frames = Frames::from_slice(1, DATA);
         assert_eq!(&frames[..], DATA);
+    }
+
+    #[test]
+    fn playback_position() {
+        let signal = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0]), -2.5);
+
+        // negatives are fine
+        let init = FramesSignalControl(&signal).playback_position();
+        assert_eq!(init, -2.5);
+
+        let mut buf = [0.0; 10];
+
+        // get back to positive
+        signal.sample(0.25, &mut buf);
+        assert_eq!(0.0, FramesSignalControl(&signal).playback_position());
+
+        // sip the sample
+        signal.sample(0.25, &mut buf);
+        assert_eq!(2.5, FramesSignalControl(&signal).playback_position());
+        signal.sample(0.25, &mut buf);
+        assert_eq!(5.0, FramesSignalControl(&signal).playback_position());
+        signal.sample(0.5, &mut buf);
+        assert_eq!(10.0, FramesSignalControl(&signal).playback_position());
+
+        // we can go over no problem too...
+        signal.sample(0.5, &mut buf);
+        assert_eq!(15.0, FramesSignalControl(&signal).playback_position());
     }
 }
