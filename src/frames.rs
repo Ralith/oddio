@@ -177,17 +177,17 @@ impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
 }
 
 /// Thread-safe control for a [`FramesSignal`], giving access to current playback location.
-pub struct FramesSignalControl<'a, T>(&'a FramesSignal<T>);
+pub struct FramesSignalControl<'a>(&'a AtomicF64);
 
 unsafe impl<'a, T: 'a> Controlled<'a> for FramesSignal<T> {
-    type Control = FramesSignalControl<'a, T>;
+    type Control = FramesSignalControl<'a>;
 
     unsafe fn make_control(signal: &'a FramesSignal<T>) -> Self::Control {
-        FramesSignalControl(signal)
+        FramesSignalControl(&signal.t)
     }
 }
 
-impl<'a, T> FramesSignalControl<'a, T> {
+impl<'a> FramesSignalControl<'a> {
     /// Get the current playback position.
     ///
     /// This number may be negative if the starting time was negative,
@@ -196,7 +196,7 @@ impl<'a, T> FramesSignalControl<'a, T> {
     /// Right now, we don't support a method to *set* the playback_position,
     /// as naively setting this variable causes audible distortions.
     pub fn playback_position(&self) -> f64 {
-        self.0.t.get()
+        self.0.get()
     }
 }
 
@@ -247,25 +247,25 @@ mod tests {
         let signal = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0]), -2.5);
 
         // negatives are fine
-        let init = FramesSignalControl(&signal).playback_position();
+        let init = FramesSignalControl(&signal.t).playback_position();
         assert_eq!(init, -2.5);
 
         let mut buf = [0.0; 10];
 
         // get back to positive
         signal.sample(0.25, &mut buf);
-        assert_eq!(0.0, FramesSignalControl(&signal).playback_position());
+        assert_eq!(0.0, FramesSignalControl(&signal.t).playback_position());
 
         // sip the sample
         signal.sample(0.25, &mut buf);
-        assert_eq!(2.5, FramesSignalControl(&signal).playback_position());
+        assert_eq!(2.5, FramesSignalControl(&signal.t).playback_position());
         signal.sample(0.25, &mut buf);
-        assert_eq!(5.0, FramesSignalControl(&signal).playback_position());
+        assert_eq!(5.0, FramesSignalControl(&signal.t).playback_position());
         signal.sample(0.5, &mut buf);
-        assert_eq!(10.0, FramesSignalControl(&signal).playback_position());
+        assert_eq!(10.0, FramesSignalControl(&signal.t).playback_position());
 
         // we can go over no problem too...
         signal.sample(0.5, &mut buf);
-        assert_eq!(15.0, FramesSignalControl(&signal).playback_position());
+        assert_eq!(15.0, FramesSignalControl(&signal.t).playback_position());
     }
 }
