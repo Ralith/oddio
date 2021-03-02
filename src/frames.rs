@@ -192,15 +192,11 @@ impl<'a, T> FramesSignalControl<'a, T> {
     ///
     /// This number may be negative if the starting time was negative,
     /// and it may be longer than the duration of the sample as well.
+    /// 
+    /// Right now, we don't support a method to *set* the playback_position,
+    /// as naively setting this variable causes audible distortions.
     pub fn playback_position(&self) -> f64 {
         self.0.t.get()
-    }
-
-    /// Sets the current playback position in seconds.
-    ///
-    /// This number may be negative.
-    pub fn set_playback_position(&mut self, value: f64) {
-        self.0.t.set(value);
     }
 }
 
