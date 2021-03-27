@@ -57,8 +57,8 @@ impl Frame for Sample {
     }
 }
 
-impl Frame for [Sample; 2] {
-    const ZERO: [Sample; 2] = [0.0; 2];
+impl<const N: usize> Frame for [Sample; N] {
+    const ZERO: Self = [0.0; N];
 
     fn channels(&self) -> &[Sample] {
         self.as_ref()
