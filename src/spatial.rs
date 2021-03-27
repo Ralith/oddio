@@ -206,7 +206,7 @@ impl Signal for SpatialScene {
         };
 
         // Zero output in preparation for mixing
-        for frame in &mut out[..] {
+        for frame in &mut *out {
             *frame = [0.0; 2];
         }
 
