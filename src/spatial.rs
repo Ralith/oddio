@@ -88,6 +88,9 @@ impl<'a> SpatialControl<'a> {
     /// Coordinates should be in world space, translated such that the listener is at the origin,
     /// but not rotated, with velocity relative to the listener. Units are meters and meters per
     /// second.
+    ///
+    /// If your sounds seem to be lagging behind their intended position by about half a second,
+    /// make sure you're providing an accurate `velocity`!
     pub fn set_motion(&mut self, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) {
         unsafe {
             *self.0.pending() = Motion { position, velocity };
