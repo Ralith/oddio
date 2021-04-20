@@ -1,16 +1,14 @@
 use std::{
-    cell::Cell,
+    cell::RefCell,
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use crate::{frame, Controlled, Filter, Frame, Signal};
+use crate::{frame, Controlled, Filter, Frame, Signal, Smoothed};
 
 /// Scales amplitude by a dynamically-adjustable factor
 pub struct Gain<T: ?Sized> {
     shared: AtomicU32,
-    prev_gain: Cell<f32>,
-    next_gain: Cell<f32>,
-    time_since_changed: Cell<f32>,
+    gain: RefCell<Smoothed<f32>>,
     inner: T,
 }
 
@@ -19,17 +17,9 @@ impl<T> Gain<T> {
     pub fn new(signal: T) -> Self {
         Self {
             shared: AtomicU32::new(1.0f32.to_bits()),
-            prev_gain: Cell::new(1.0),
-            next_gain: Cell::new(1.0),
-            time_since_changed: Cell::new(1.0),
+            gain: RefCell::new(Smoothed::new(1.0)),
             inner: signal,
         }
-    }
-
-    fn gain(&self) -> f32 {
-        let diff = self.next_gain.get() - self.prev_gain.get();
-        let progress = ((self.time_since_changed.get()) / SMOOTHING_PERIOD).min(1.0);
-        self.prev_gain.get() + progress * diff
     }
 }
 
@@ -43,15 +33,13 @@ where
     fn sample(&self, interval: f32, out: &mut [T::Frame]) {
         self.inner.sample(interval, out);
         let shared = f32::from_bits(self.shared.load(Ordering::Relaxed));
-        if self.next_gain.get() != shared {
-            self.prev_gain.set(self.gain());
-            self.next_gain.set(shared);
-            self.time_since_changed.set(0.0);
+        let mut gain = self.gain.borrow_mut();
+        if gain.get() != shared {
+            gain.set(shared);
         }
         for x in out {
-            *x = frame::scale(x, self.gain());
-            self.time_since_changed
-                .set(self.time_since_changed.get() + interval);
+            *x = frame::scale(x, gain.get());
+            gain.advance(interval / SMOOTHING_PERIOD);
         }
     }
 
@@ -85,6 +73,10 @@ impl<'a> GainControl<'a> {
     }
 
     /// Adjust the gain
+    ///
+    /// `factor` is linear. Human perception of loudness is logarithmic, so user-visible
+    /// configuration should use an exponential curve, e.g. `1e-3 * (6.908 * x).exp()` for `x` in
+    /// [0, 1]` repreesnting a range of -60 to 0 dB.
     pub fn set_gain(&mut self, factor: f32) {
         self.0.store(factor.to_bits(), Ordering::Relaxed);
     }
