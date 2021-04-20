@@ -76,7 +76,7 @@ impl<'a> GainControl<'a> {
     ///
     /// `factor` is linear. Human perception of loudness is logarithmic, so user-visible
     /// configuration should use an exponential curve, e.g. `1e-3 * (6.908 * x).exp()` for `x` in
-    /// [0, 1]` repreesnting a range of -60 to 0 dB.
+    /// [0, 1]` representing a range of -60 to 0 dB.
     pub fn set_gain(&mut self, factor: f32) {
         self.0.store(factor.to_bits(), Ordering::Relaxed);
     }
