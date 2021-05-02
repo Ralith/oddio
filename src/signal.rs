@@ -1,4 +1,4 @@
-use crate::{flatten_stereo, Sample};
+use crate::{flatten_stereo, Filter, Sample};
 
 /// An audio signal
 ///
@@ -28,7 +28,7 @@ pub trait Signal {
 }
 
 /// Adapts a mono signal to output stereo by duplicating its output
-pub struct MonoToStereo<T>(T);
+pub struct MonoToStereo<T: ?Sized>(T);
 
 impl<T> MonoToStereo<T> {
     /// Adapt `signal` from mono to stereo
@@ -51,6 +51,14 @@ impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
 
     fn remaining(&self) -> f32 {
         self.0.remaining()
+    }
+}
+
+impl<T: ?Sized> Filter for MonoToStereo<T> {
+    type Inner = T;
+
+    fn inner(&self) -> &Self::Inner {
+        &self.0
     }
 }
 
