@@ -48,6 +48,11 @@ impl<T> Smoothed<T> {
         self.progress = (self.progress + proportion).min(1.0);
     }
 
+    /// Progress from the previous towards the next value
+    pub fn progress(&self) -> f32 {
+        self.progress
+    }
+
     /// Set the next value to `x`
     pub fn set(&mut self, value: T)
     where
