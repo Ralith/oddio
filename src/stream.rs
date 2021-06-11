@@ -2,18 +2,18 @@
 
 use std::cell::{Cell, RefCell};
 
-use crate::{spsc, Controlled, Sample, Signal};
+use crate::{frame, spsc, Controlled, Frame, Signal};
 
 /// Dynamic audio from an external source
-pub struct Stream {
-    send: RefCell<spsc::Sender<Sample>>,
+pub struct Stream<T> {
+    send: RefCell<spsc::Sender<T>>,
     rate: u32,
-    inner: RefCell<spsc::Receiver<Sample>>,
-    /// Offset of t=0 from the start of the buffer, in samples
+    inner: RefCell<spsc::Receiver<T>>,
+    /// Offset of t=0 from the start of the buffer, in frames
     t: Cell<f32>,
 }
 
-impl Stream {
+impl<T> Stream<T> {
     /// Construct a stream of dynamic audio
     ///
     /// Samples can be appended to the stream through its [`Handle`](crate::Handle). This allows the
@@ -33,25 +33,31 @@ impl Stream {
     }
 
     #[inline]
-    fn get(&self, sample: isize) -> f32 {
+    fn get(&self, sample: isize) -> T
+    where
+        T: Frame + Copy,
+    {
         if sample < 0 {
-            return 0.0;
+            return T::ZERO;
         }
         let sample = sample as usize;
         let inner = self.inner.borrow();
         if sample >= inner.len() {
-            return 0.0;
+            return T::ZERO;
         }
         inner[sample]
     }
 
-    fn sample_single(&self, s: f32) -> Sample {
+    fn sample_single(&self, s: f32) -> T
+    where
+        T: Frame + Copy,
+    {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);
-        a + fract * (b - a)
+        frame::lerp(&a, &b, fract)
     }
 
     fn advance(&self, dt: f32) {
@@ -62,11 +68,10 @@ impl Stream {
     }
 }
 
-impl Signal for Stream {
-    // This could be made generic if needed.
-    type Frame = Sample;
+impl<T: Frame + Copy> Signal for Stream<T> {
+    type Frame = T;
 
-    fn sample(&self, interval: f32, out: &mut [Sample]) {
+    fn sample(&self, interval: f32, out: &mut [T]) {
         self.inner.borrow_mut().update();
         let s0 = self.t.get();
         let ds = interval * self.rate as f32;
@@ -79,19 +84,25 @@ impl Signal for Stream {
 }
 
 /// Thread-safe control for a [`Stream`]
-pub struct StreamControl<'a>(&'a Stream);
+pub struct StreamControl<'a, T>(&'a Stream<T>);
 
-unsafe impl<'a> Controlled<'a> for Stream {
-    type Control = StreamControl<'a>;
+unsafe impl<'a, T> Controlled<'a> for Stream<T>
+where
+    T: 'static,
+{
+    type Control = StreamControl<'a, T>;
 
-    unsafe fn make_control(signal: &'a Stream) -> Self::Control {
+    unsafe fn make_control(signal: &'a Stream<T>) -> Self::Control {
         StreamControl(signal)
     }
 }
 
-impl<'a> StreamControl<'a> {
+impl<'a, T> StreamControl<'a, T> {
     /// Add more samples. Returns the number of samples read.
-    pub fn write(&mut self, samples: &[Sample]) -> usize {
+    pub fn write(&mut self, samples: &[T]) -> usize
+    where
+        T: Copy,
+    {
         self.0.send.borrow_mut().send_from_slice(samples)
     }
 }
@@ -100,7 +111,7 @@ impl<'a> StreamControl<'a> {
 mod tests {
     use super::*;
 
-    fn assert_out(stream: &Stream, expected: &[Sample]) {
+    fn assert_out(stream: &Stream<f32>, expected: &[f32]) {
         let mut output = vec![0.0; expected.len()];
         stream.sample(1.0, &mut output);
         assert_eq!(output, expected);
@@ -108,7 +119,7 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let s = Stream::new(1, 3);
+        let s = Stream::<f32>::new(1, 3);
         assert_eq!(StreamControl(&s).write(&[1.0, 2.0]), 2);
         assert_eq!(StreamControl(&s).write(&[3.0, 4.0]), 1);
         assert_out(&s, &[1.0, 2.0, 3.0, 0.0, 0.0]);
