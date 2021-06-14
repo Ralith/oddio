@@ -46,6 +46,11 @@ where
     fn remaining(&self) -> f32 {
         self.inner.remaining()
     }
+
+    #[inline]
+    fn handle_dropped(&self) {
+        self.inner.handle_dropped();
+    }
 }
 
 impl<T> Filter for Gain<T> {

@@ -216,8 +216,11 @@ impl Signal for SpatialScene {
         let elapsed = interval * out.len() as f32;
         for i in (0..set.len()).rev() {
             let signal = &set[i];
+            if Arc::strong_count(signal) == 1 {
+                signal.inner.handle_dropped();
+            }
             // Discard finished sources
-            if signal.remaining() < 0.0 {
+            if signal.remaining() <= 0.0 {
                 signal.inner.stop();
             }
             if signal.inner.is_stopped() {

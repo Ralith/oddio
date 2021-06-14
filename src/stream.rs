@@ -11,6 +11,8 @@ pub struct Stream<T> {
     inner: RefCell<spsc::Receiver<T>>,
     /// Offset of t=0 from the start of the buffer, in frames
     t: Cell<f32>,
+    /// Whether the handle has been dropped
+    closed: Cell<bool>,
 }
 
 impl<T> Stream<T> {
@@ -29,6 +31,7 @@ impl<T> Stream<T> {
             rate,
             inner: RefCell::new(recv),
             t: Cell::new(0.0),
+            closed: Cell::new(false),
         }
     }
 
@@ -81,6 +84,20 @@ impl<T: Frame + Copy> Signal for Stream<T> {
         }
         self.advance(interval * out.len() as f32);
     }
+
+    fn remaining(&self) -> f32 {
+        if !self.closed.get() {
+            return f32::INFINITY;
+        }
+        let t = self.t.get();
+        self.inner.borrow_mut().update();
+        let total_seconds = self.inner.borrow().len() as f32 / self.rate as f32;
+        total_seconds - t
+    }
+
+    fn handle_dropped(&self) {
+        self.closed.set(true);
+    }
 }
 
 /// Thread-safe control for a [`Stream`]
@@ -127,5 +144,20 @@ mod tests {
         assert_out(&s, &[5.0]);
         assert_out(&s, &[6.0, 7.0, 0.0, 0.0]);
         assert_out(&s, &[0.0, 0.0]);
+    }
+
+    #[test]
+    fn cleanup() {
+        let s = Stream::<f32>::new(1, 4);
+        assert_eq!(StreamControl(&s).write(&[1.0, 2.0]), 2);
+        assert_eq!(s.remaining(), f32::INFINITY);
+        s.handle_dropped();
+        assert_eq!(s.remaining(), 2.0);
+        s.sample(1.0, &mut [0.0]);
+        assert_eq!(s.remaining(), 1.0);
+        s.sample(1.0, &mut [0.0]);
+        assert_eq!(s.remaining(), 0.0);
+        s.sample(1.0, &mut [0.0]);
+        assert_eq!(s.remaining(), 0.0);
     }
 }

@@ -83,7 +83,10 @@ impl<T: Frame> Signal for Mixer<T> {
 
         for i in (0..this.set.len()).rev() {
             let signal = &this.set[i];
-            if signal.remaining() < 0.0 {
+            if Arc::strong_count(signal) == 1 {
+                signal.handle_dropped();
+            }
+            if signal.remaining() <= 0.0 {
                 signal.stop();
             }
             if signal.is_stopped() {

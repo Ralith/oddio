@@ -35,6 +35,11 @@ where
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
         self.inner.remaining() / speed
     }
+
+    #[inline]
+    fn handle_dropped(&self) {
+        self.inner.handle_dropped();
+    }
 }
 
 impl<T> Filter for Speed<T> {
