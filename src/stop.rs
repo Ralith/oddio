@@ -51,6 +51,11 @@ impl<T: Signal + ?Sized> Signal for Stop<T> {
             _ => 0.0,
         }
     }
+
+    #[inline]
+    fn handle_dropped(&self) {
+        self.inner.handle_dropped();
+    }
 }
 
 impl<T> Filter for Stop<T> {

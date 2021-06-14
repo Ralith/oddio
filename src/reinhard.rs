@@ -35,6 +35,11 @@ where
     fn remaining(&self) -> f32 {
         self.0.remaining()
     }
+
+    #[inline]
+    fn handle_dropped(&self) {
+        self.0.handle_dropped();
+    }
 }
 
 impl<T> Filter for Reinhard<T> {

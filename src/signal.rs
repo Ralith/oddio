@@ -25,6 +25,13 @@ pub trait Signal {
     fn remaining(&self) -> f32 {
         f32::INFINITY
     }
+
+    /// Called when the signal's handle is dropped
+    ///
+    /// Useful for e.g. allowing [`Stream`](crate::Stream) to clean itself when no more data can be
+    /// supplied
+    #[inline]
+    fn handle_dropped(&self) {}
 }
 
 /// Adapts a mono signal to output stereo by duplicating its output
@@ -51,6 +58,11 @@ impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
 
     fn remaining(&self) -> f32 {
         self.0.remaining()
+    }
+
+    #[inline]
+    fn handle_dropped(&self) {
+        self.0.handle_dropped();
     }
 }
 
