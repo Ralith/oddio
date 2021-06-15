@@ -71,9 +71,12 @@ fn main() {
     const SPEED: f32 = 50.0;
     let mut signal: AudioHandle = scene_handle.control::<oddio::SpatialScene, _>().play(
         gain,
-        [-SPEED, 10.0, 0.0].into(),
-        [SPEED, 0.0, 0.0].into(),
-        1000.0,
+        oddio::SpatialOptions {
+            position: [-SPEED, 10.0, 0.0].into(),
+            velocity: [SPEED, 0.0, 0.0].into(),
+            max_distance: 1000.0,
+            radius: 0.1,
+        },
     );
 
     let start = Instant::now();
