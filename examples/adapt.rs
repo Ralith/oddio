@@ -17,11 +17,6 @@ fn main() {
     );
     let (mut mixer, split) = oddio::split(mixer);
 
-    let quiet = oddio::Gain::new(oddio::Sine::new(0.0, 5e2), QUIET_AMPLITUDE);
-    let loud = oddio::Gain::new(oddio::Sine::new(0.0, 4e2), 0.8);
-
-    mixer.control::<oddio::Mixer<f32>, _>().play(quiet);
-
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: RATE,
@@ -42,6 +37,10 @@ fn main() {
         }
     };
 
+    let quiet = oddio::Gain::new(oddio::Sine::new(0.0, 5e2), QUIET_AMPLITUDE);
+    let loud = oddio::Gain::new(oddio::Sine::new(0.0, 4e2), 0.8);
+
+    mixer.control::<oddio::Mixer<f32>, _>().play(quiet);
     drive();
     let mut handle = mixer.control::<oddio::Mixer<f32>, _>().play(loud);
     drive();

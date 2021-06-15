@@ -37,7 +37,7 @@ impl<T> Adapt<T> {
 #[derive(Debug, Copy, Clone)]
 pub struct AdaptOptions {
     /// How smoothly the filter should respond. Smaller values reduce time spent outside the target
-    /// range, at the cost of lower perceived dynamic range.
+    /// range, at the cost of lower perceived dynamic range. 0.1 is a good place to start.
     pub tau: f32,
     /// Maximum linear gain to apply regardless of input signal
     pub max_gain: f32,
