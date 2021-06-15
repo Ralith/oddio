@@ -32,6 +32,7 @@
 
 #![warn(missing_docs)]
 
+mod adapt;
 mod constant;
 mod cycle;
 mod filter;
@@ -53,6 +54,7 @@ mod stop;
 mod stream;
 mod swap;
 
+pub use adapt::{Adapt, AdaptOptions};
 pub use constant::Constant;
 pub use cycle::Cycle;
 pub use filter::*;
