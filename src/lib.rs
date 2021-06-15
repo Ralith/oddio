@@ -17,7 +17,7 @@
 //! # let velocity = [0.0, 0.0, 0.0].into();
 //! let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
 //! let mut handle = scene_handle.control::<oddio::SpatialScene, _>()
-//!     .play(frames, oddio::SpatialOptions::default());
+//!     .play(frames, oddio::SpatialOptions { position, velocity, ..Default::default() });
 //!
 //! // When position/velocity changes:
 //! handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);

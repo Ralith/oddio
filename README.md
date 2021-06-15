@@ -25,7 +25,7 @@ oddio::run(&scene, output_sample_rate, out_frames);
 // In game logic:
 let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
 let mut handle = scene_handle.control::<oddio::SpatialScene, _>()
-    .play(frames, position, velocity, 1000.0);
+    .play(frames, oddio::SpatialOptions { position, velocity, ..Default::default() });
 
 // When position/velocity changes:
 handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
