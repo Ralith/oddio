@@ -32,6 +32,7 @@
 
 #![warn(missing_docs)]
 
+mod constant;
 mod cycle;
 mod filter;
 mod frame;
@@ -52,6 +53,7 @@ mod stop;
 mod stream;
 mod swap;
 
+pub use constant::Constant;
 pub use cycle::Cycle;
 pub use filter::*;
 pub use frame::Frame;
