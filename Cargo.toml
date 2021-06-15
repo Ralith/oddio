@@ -16,4 +16,4 @@ mint = "0.5.5"
 
 [dev-dependencies]
 cpal = "0.13.1"
-wav = "0.4"
+hound = "3.4"
