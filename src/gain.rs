@@ -14,10 +14,10 @@ pub struct Gain<T: ?Sized> {
 
 impl<T> Gain<T> {
     /// Apply dynamic gain to `signal`
-    pub fn new(signal: T) -> Self {
+    pub fn new(signal: T, initial: f32) -> Self {
         Self {
             shared: AtomicU32::new(1.0f32.to_bits()),
-            gain: RefCell::new(Smoothed::new(1.0)),
+            gain: RefCell::new(Smoothed::new(initial)),
             inner: signal,
         }
     }
@@ -93,24 +93,11 @@ const SMOOTHING_PERIOD: f32 = 0.1;
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use crate::Sample;
-
-    struct Const;
-
-    impl Signal for Const {
-        type Frame = Sample;
-
-        fn sample(&self, _: f32, out: &mut [Sample]) {
-            for x in out {
-                *x = 1.0;
-            }
-        }
-    }
+    use crate::Constant;
 
     #[test]
     fn smoothing() {
-        let s = Gain::new(Const);
+        let s = Gain::new(Constant(1.0));
         let mut buf = [0.0; 6];
         GainControl(&s.shared).set_gain(5.0);
         s.sample(0.025, &mut buf);
