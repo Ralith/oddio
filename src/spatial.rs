@@ -17,6 +17,7 @@ type ErasedSpatial = Arc<Spatial<Stop<dyn Signal<Frame = Sample> + Send>>>;
 /// An individual spatialized signal
 pub struct Spatial<T: ?Sized> {
     max_delay: f32,
+    radius: f32,
     motion: Swap<Motion>,
     state: RefCell<State>,
     /// Delay queue of sound propagating through the medium
@@ -34,6 +35,7 @@ impl<T> Spatial<T> {
         position: mint::Point3<f32>,
         velocity: mint::Vector3<f32>,
         max_delay: f32,
+        radius: f32,
     ) -> Self {
         let mut queue = Ring::new((max_delay * rate as f32).ceil() as usize + 1);
         queue.delay(
@@ -42,6 +44,7 @@ impl<T> Spatial<T> {
         );
         Self {
             max_delay,
+            radius,
             motion: Swap::new(Motion { position, velocity }),
             state: RefCell::new(State::new(position)),
             queue: RefCell::new(queue),
@@ -144,8 +147,7 @@ unsafe impl<'a> Controlled<'a> for SpatialScene {
 }
 
 impl<'a> SpatialSceneControl<'a> {
-    /// Begin playing `signal` at `position`, moving at `velocity`, with accurate propagation delay
-    /// out to `max_distance`
+    /// Begin playing `signal`
     ///
     /// Note that `signal` must be single-channel. Signals in a spatial scene are modeled as
     /// isotropic point sources, and cannot sensibly emit multichannel audio.
@@ -159,22 +161,17 @@ impl<'a> SpatialSceneControl<'a> {
     ///
     /// The type of signal given determines what additional controls can be used. See the
     /// examples for a detailed guide.
-    pub fn play<S>(
-        &mut self,
-        signal: S,
-        position: mint::Point3<f32>,
-        velocity: mint::Vector3<f32>,
-        max_distance: f32,
-    ) -> Handle<Spatial<Stop<S>>>
+    pub fn play<S>(&mut self, signal: S, options: SpatialOptions) -> Handle<Spatial<Stop<S>>>
     where
         S: Signal<Frame = Sample> + Send + 'static,
     {
         let signal = Arc::new(Spatial::new(
             self.0.rate,
             Stop::new(signal),
-            position,
-            velocity,
-            max_distance / SPEED_OF_SOUND + self.0.buffer_duration,
+            options.position,
+            options.velocity,
+            options.max_distance / SPEED_OF_SOUND + self.0.buffer_duration,
+            options.radius,
         ));
         let handle = unsafe { Handle::from_arc(signal.clone()) };
         self.0.send.borrow_mut().insert(signal);
@@ -190,6 +187,30 @@ impl<'a> SpatialSceneControl<'a> {
             *self.0.rot.pending() = signal_rotation;
         }
         self.0.rot.flush();
+    }
+}
+
+/// Passed to [`SpatialSceneControl::play`]
+#[derive(Debug, Copy, Clone)]
+pub struct SpatialOptions {
+    /// Initial position
+    pub position: mint::Point3<f32>,
+    /// Initial velocity
+    pub velocity: mint::Vector3<f32>,
+    /// Maximum distance having accurate propagation delay. Larger values consume more memory.
+    pub max_distance: f32,
+    /// Distance of zero attenuation. Approaching closer does not increase volume.
+    pub radius: f32,
+}
+
+impl Default for SpatialOptions {
+    fn default() -> Self {
+        Self {
+            position: [0.0; 3].into(),
+            velocity: [0.0; 3].into(),
+            max_distance: 100.0,
+            radius: 0.1,
+        }
     }
 }
 
@@ -267,8 +288,8 @@ impl Signal for SpatialScene {
 
             // Mix into output
             for &ear in &[Ear::Left, Ear::Right] {
-                let prev_state = EarState::new(prev_position, ear);
-                let next_state = EarState::new(next_position, ear);
+                let prev_state = EarState::new(prev_position, ear, signal.radius);
+                let next_state = EarState::new(next_position, ear, signal.radius);
 
                 // Clamp into the max length of the delay queue
                 let prev_offset = (prev_state.offset - elapsed).max(-signal.max_delay);
@@ -346,15 +367,20 @@ struct EarState {
 }
 
 impl EarState {
-    fn new(position_wrt_listener: mint::Point3<f32>, ear: Ear) -> Self {
-        let distance = norm(sub(position_wrt_listener, ear.pos())).max(0.1);
+    fn new(position_wrt_listener: mint::Point3<f32>, ear: Ear, radius: f32) -> Self {
+        let distance = norm(sub(position_wrt_listener, ear.pos()));
         let offset = distance * (-1.0 / SPEED_OF_SOUND);
-        let distance_gain = 1.0 / distance;
-        let stereo_gain = 1.0
-            + dot(
-                ear.dir(),
-                scale(position_wrt_listener.into(), 1.0 / distance),
-            );
+        let distance_gain = radius / distance.max(radius);
+        // 1.0 when ear faces source directly; 0.5 when perpendicular; 0 when opposite
+        let stereo_gain = 0.5
+            + if distance < 1e-3 {
+                0.5
+            } else {
+                dot(
+                    ear.dir(),
+                    scale(position_wrt_listener.into(), 0.5 / distance),
+                )
+            };
         Self {
             offset,
             gain: stereo_gain * distance_gain,

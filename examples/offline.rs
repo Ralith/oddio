@@ -17,9 +17,12 @@ fn main() {
     let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(RATE, 0.1));
     scene_handle.control::<oddio::SpatialScene, _>().play(
         oddio::FramesSignal::from(boop),
-        [-SPEED, 10.0, 0.0].into(),
-        [SPEED, 0.0, 0.0].into(),
-        1000.0,
+        oddio::SpatialOptions {
+            position: [-SPEED, 10.0, 0.0].into(),
+            velocity: [SPEED, 0.0, 0.0].into(),
+            max_distance: 1000.0,
+            radius: 0.1,
+        },
     );
 
     let mut frames = vec![[0.0; 2]; (RATE * DURATION_SECS) as usize];
