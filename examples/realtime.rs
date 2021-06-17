@@ -97,6 +97,7 @@ fn main() {
         spatial_control.set_motion(
             [-SPEED + SPEED * dt.as_secs_f32(), 10.0, 0.0].into(),
             [SPEED, 0.0, 0.0].into(),
+            false,
         );
 
         // We also could adjust the Gain here in the same way:

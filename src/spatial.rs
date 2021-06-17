@@ -45,7 +45,11 @@ impl<T> Spatial<T> {
         Self {
             max_delay,
             radius,
-            motion: Swap::new(Motion { position, velocity }),
+            motion: Swap::new(Motion {
+                position,
+                velocity,
+                discontinuity: false,
+            }),
             state: RefCell::new(State::new(position)),
             queue: RefCell::new(queue),
             inner,
@@ -92,11 +96,23 @@ impl<'a> SpatialControl<'a> {
     /// but not rotated, with velocity relative to the listener. Units are meters and meters per
     /// second.
     ///
+    /// Set `discontinuity` when the signal or listener has teleported. This prevents inference of a
+    /// very high velocity, with associated intense Doppler effects.
+    ///
     /// If your sounds seem to be lagging behind their intended position by about half a second,
     /// make sure you're providing an accurate `velocity`!
-    pub fn set_motion(&mut self, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) {
+    pub fn set_motion(
+        &mut self,
+        position: mint::Point3<f32>,
+        velocity: mint::Vector3<f32>,
+        discontinuity: bool,
+    ) {
         unsafe {
-            *self.0.pending() = Motion { position, velocity };
+            *self.0.pending() = Motion {
+                position,
+                velocity,
+                discontinuity,
+            };
         }
         self.0.flush();
     }
@@ -270,7 +286,11 @@ impl Signal for SpatialScene {
                 // Update motion
                 let orig_next = *signal.motion.received();
                 if signal.motion.refresh() {
-                    state.prev_position = state.smoothed_position(0.0, &orig_next);
+                    state.prev_position = if (*signal.motion.received()).discontinuity {
+                        (*signal.motion.received()).position
+                    } else {
+                        state.smoothed_position(0.0, &orig_next)
+                    };
                     state.dt = 0.0;
                 } else {
                     debug_assert_eq!(orig_next.position, (*signal.motion.received()).position);
@@ -320,6 +340,7 @@ impl Signal for SpatialScene {
 struct Motion {
     position: mint::Point3<f32>,
     velocity: mint::Vector3<f32>,
+    discontinuity: bool,
 }
 
 struct State {
