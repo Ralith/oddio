@@ -28,7 +28,7 @@ let mut handle = scene_handle.control::<oddio::SpatialScene, _>()
     .play(frames, oddio::SpatialOptions { position, velocity, ..Default::default() });
 
 // When position/velocity changes:
-handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity);
+handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity, false);
 ```
 
 ## License
