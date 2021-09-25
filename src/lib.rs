@@ -23,6 +23,9 @@
 //! handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity, false);
 //! ```
 //!
+//! To get started, review [the `examples`
+//! subdirectory](https://github.com/Ralith/oddio/tree/main/examples) in the crate source.
+//!
 //! Key primitives:
 //! - [`Frames`] stores static audio data, which can be played with a [`FramesSignal`]
 //! - [`Mixer`] allows multiple signals to be played concurrently and controlled during playback
