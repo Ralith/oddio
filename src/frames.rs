@@ -85,6 +85,11 @@ impl<T> Frames<T> {
         self.rate as u32
     }
 
+    /// The runtime in seconds
+    pub fn runtime(&self) -> f64 {
+        self.samples.len() as f64 / self.rate
+    }
+
     /// Interpolate a frame for position `s`
     ///
     /// Note that `s` is in samples, not seconds. Whole numbers are always an exact sample, and
