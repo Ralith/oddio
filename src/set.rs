@@ -145,7 +145,7 @@ impl<T> SetInner<T> {
                 ReallocSignals(signals, free) => {
                     // Move all existing slots into the new storage
                     let mut old = mem::replace(&mut self.signals, signals);
-                    self.signals.extend(old.drain(..));
+                    self.signals.append(&mut old);
                     self.free = free;
                     self.free
                         .send(Free::Table(old), 0)
