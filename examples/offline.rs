@@ -29,7 +29,7 @@ fn main() {
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
-    let mut writer = hound::WavWriter::create("a.wav", spec).unwrap();
+    let mut writer = hound::WavWriter::create("offline.wav", spec).unwrap();
 
     for _ in 0..(RATE * DURATION_SECS / BLOCK_SIZE as u32) {
         let mut block = [[0.0; 2]; BLOCK_SIZE];

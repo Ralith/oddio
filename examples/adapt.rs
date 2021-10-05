@@ -23,7 +23,7 @@ fn main() {
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
-    let mut writer = hound::WavWriter::create("a.wav", spec).unwrap();
+    let mut writer = hound::WavWriter::create("adapt.wav", spec).unwrap();
 
     let mut drive = || {
         for _ in 0..(RATE * DURATION_SECS / BLOCK_SIZE as u32) {
