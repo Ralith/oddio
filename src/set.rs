@@ -75,7 +75,7 @@ impl<T> SetHandle<T> {
         }
     }
 
-    // Free old resignals
+    // Free old signals
     fn gc(&mut self) {
         while self
             .old_senders
