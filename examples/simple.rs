@@ -2,7 +2,7 @@
 
 use std::{thread, time::Duration};
 
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 fn main() {
     // Configure cpal
@@ -23,7 +23,7 @@ fn main() {
     let (mut mixer_handle, mixer) = oddio::split(oddio::Mixer::new());
 
     // Start cpal, taking care not to drop its stream early
-    let _stream = device
+    let stream = device
         .build_output_stream(
             &config,
             move |out_flat: &mut [f32], _: &cpal::OutputCallbackInfo| {
@@ -35,12 +35,13 @@ fn main() {
             },
         )
         .unwrap();
+    stream.play().unwrap();
 
     // Start a 200Hz sine wave. We can do this as many times as we like, whenever we like, with
     // different types of signals as needed.
     mixer_handle
         .control::<oddio::Mixer<_>, _>()
-        .play(oddio::MonoToStereo::new(oddio::Sine::new(0.0, 200.0)));
+        .play(oddio::MonoToStereo::new(oddio::Sine::new(0.0, 400.0)));
 
     // Wait a bit before exiting
     thread::sleep(Duration::from_secs(3));
