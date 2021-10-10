@@ -1,7 +1,6 @@
 //! Streaming audio support
 
 use crate::{frame, math::fractf, spsc, Controlled, Frame, Signal};
-use alloc::vec;
 use core::cell::{Cell, RefCell};
 use libm::truncf;
 
@@ -57,7 +56,7 @@ impl<T> Stream<T> {
         T: Frame + Copy,
     {
         let x0 = truncf(s) as isize;
-        let fract = truncf(s) as f32;
+        let fract = fractf(s) as f32;
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);
@@ -128,6 +127,7 @@ impl<'a, T> StreamControl<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     fn assert_out(stream: &Stream<f32>, expected: &[f32]) {
         let mut output = vec![0.0; expected.len()];
