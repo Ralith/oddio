@@ -1,4 +1,4 @@
-use std::{
+use core::{
     cell::RefCell,
     sync::atomic::{AtomicU32, Ordering},
 };

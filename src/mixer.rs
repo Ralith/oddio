@@ -1,4 +1,5 @@
-use std::{cell::RefCell, sync::Arc};
+use alloc::sync::Arc;
+use core::cell::RefCell;
 
 use crate::{frame, set, Controlled, Frame, Handle, Set, SetHandle, Signal, Stop};
 

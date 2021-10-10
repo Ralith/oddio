@@ -1,4 +1,5 @@
-use std::{marker::PhantomData, sync::Arc};
+use alloc::sync::Arc;
+use core::marker::PhantomData;
 
 /// Handle for manipulating a signal owned elsewhere
 ///

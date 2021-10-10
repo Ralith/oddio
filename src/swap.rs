@@ -1,4 +1,4 @@
-use std::{
+use core::{
     cell::{Cell, UnsafeCell},
     sync::atomic::{AtomicUsize, Ordering},
 };

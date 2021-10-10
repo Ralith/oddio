@@ -76,7 +76,7 @@ impl<T: ?Sized> Filter for MonoToStereo<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use core::cell::Cell;
 
     use super::*;
 

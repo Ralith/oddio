@@ -1,4 +1,5 @@
-use std::{cell::UnsafeCell, collections::VecDeque, mem, ops::Deref};
+use alloc::collections::vec_deque::VecDeque;
+use core::{cell::UnsafeCell, mem, ops::Deref};
 
 use crate::spsc;
 

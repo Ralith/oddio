@@ -1,6 +1,6 @@
 //! Streaming audio support
 
-use std::cell::{Cell, RefCell};
+use core::cell::{Cell, RefCell};
 
 use crate::{frame, spsc, Controlled, Frame, Signal};
 
