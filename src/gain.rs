@@ -5,7 +5,11 @@ use std::{
 
 use crate::{frame, Controlled, Filter, Frame, Signal, Smoothed};
 
-/// Scales amplitude by a dynamically-adjustable factor
+/// Amplifies a signal
+///
+/// To implement a volume control, place a gain combinator near the end of your pipeline where the
+/// input amplitude is initially in the range [0, 1] and pass decibels to [`GainControl::set_gain`],
+/// mapping the minimum volume to 0 decibels, and the minimum to e.g. -60.
 pub struct Gain<T: ?Sized> {
     shared: AtomicU32,
     gain: RefCell<Smoothed<f32>>,
@@ -77,12 +81,21 @@ impl<'a> GainControl<'a> {
         f32::from_bits(self.0.load(Ordering::Relaxed))
     }
 
-    /// Adjust the gain
+    /// Amplify the signal by `db` decibels
     ///
-    /// `factor` is linear. Human perception of loudness is logarithmic, so user-visible
-    /// configuration should use an exponential curve, e.g. `1e-3 * (6.908 * x).exp()` for `x` in
-    /// [0, 1]` representing a range of -60 to 0 dB.
-    pub fn set_gain(&mut self, factor: f32) {
+    /// Perceptually linear. Negative values make the signal quieter.
+    ///
+    /// Equivalent to `self.set_amplitude_ratio(10.0f32.powf(db / 20.0))`.
+    pub fn set_gain(&mut self, db: f32) {
+        self.set_amplitude_ratio(10.0f32.powf(db / 20.0));
+    }
+
+    /// Scale the amplitude of the signal directly
+    ///
+    /// This is nonlinear in terms of both perception and power. Most users should prefer
+    /// `set_gain`. Unlike `set_gain`, this method allows a signal to be completely zeroed out if
+    /// needed, or even have its phase inverted with a negative factor.
+    pub fn set_amplitude_ratio(&mut self, factor: f32) {
         self.0.store(factor.to_bits(), Ordering::Relaxed);
     }
 }
@@ -99,7 +112,7 @@ mod tests {
     fn smoothing() {
         let s = Gain::new(Constant(1.0), 1.0);
         let mut buf = [0.0; 6];
-        GainControl(&s.shared).set_gain(5.0);
+        GainControl(&s.shared).set_amplitude_ratio(5.0);
         s.sample(0.025, &mut buf);
         assert_eq!(buf, [1.0, 2.0, 3.0, 4.0, 5.0, 5.0]);
         s.sample(0.025, &mut buf);
