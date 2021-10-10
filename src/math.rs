@@ -64,7 +64,7 @@ pub fn rotate(rot: &mint::Quaternion<f32>, p: &mint::Point3<f32>) -> mint::Point
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f32::consts::PI;
+    use core::f32::consts::PI;
 
     #[test]
     fn rotate_x() {

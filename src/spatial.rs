@@ -1,7 +1,7 @@
-use std::{
+use alloc::sync::Arc;
+use core::{
     cell::RefCell,
     ops::{Index, IndexMut},
-    sync::Arc,
 };
 
 use crate::{

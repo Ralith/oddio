@@ -1,14 +1,11 @@
-use std::{
-    alloc,
+use crate::alloc::{alloc, sync::Arc};
+use core::{
     cell::UnsafeCell,
     fmt, mem,
     mem::MaybeUninit,
     ops::Index,
     ptr, slice,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 pub fn channel<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {

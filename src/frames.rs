@@ -1,11 +1,9 @@
-use std::{
-    alloc, mem,
+use crate::alloc::{alloc, sync::Arc};
+use core::{
+    mem,
     ops::{Deref, DerefMut},
     ptr,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate::{frame, Controlled, Frame, Seek, Signal};
