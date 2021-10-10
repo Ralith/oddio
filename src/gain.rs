@@ -76,9 +76,9 @@ unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
 }
 
 impl<'a> GainControl<'a> {
-    /// Get the current gain
+    /// Get the current amplification in decibels
     pub fn gain(&self) -> f32 {
-        f32::from_bits(self.0.load(Ordering::Relaxed))
+        20.0 * self.amplitude_ratio().log10()
     }
 
     /// Amplify the signal by `db` decibels
@@ -88,6 +88,11 @@ impl<'a> GainControl<'a> {
     /// Equivalent to `self.set_amplitude_ratio(10.0f32.powf(db / 20.0))`.
     pub fn set_gain(&mut self, db: f32) {
         self.set_amplitude_ratio(10.0f32.powf(db / 20.0));
+    }
+
+    /// Get the current amplitude scaling factor
+    pub fn amplitude_ratio(&self) -> f32 {
+        f32::from_bits(self.0.load(Ordering::Relaxed))
     }
 
     /// Scale the amplitude of the signal directly
