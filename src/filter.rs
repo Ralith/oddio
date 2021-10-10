@@ -28,7 +28,7 @@ impl<T: ?Sized> Handle<T> {
     /// ```
     /// # use oddio::*;
     /// fn quiet(signal: &mut Handle<Spatial<Gain<FramesSignal<Sample>>>>) {
-    ///     signal.control::<Gain<_>, _>().set_gain(0.5);
+    ///     signal.control::<Gain<_>, _>().set_gain(-3.0);
     /// }
     /// ```
     pub fn control<'a, S, Index>(&'a mut self) -> S::Control
