@@ -9,7 +9,7 @@ fn main() {
         // Generate a simple sine wave
         (0..RATE * DURATION_SECS).map(|i| {
             let t = i as f32 / RATE as f32;
-            (t * 500.0 * 2.0 * std::f32::consts::PI).sin() * 80.0
+            (t * 500.0 * 2.0 * core::f32::consts::PI).sin() * 80.0
         }),
     );
     let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(RATE, 0.1));

@@ -67,7 +67,7 @@ impl Ring {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use core::cell::Cell;
 
     use super::*;
 

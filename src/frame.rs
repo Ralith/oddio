@@ -49,11 +49,11 @@ impl Frame for Sample {
     const ZERO: Sample = 0.0;
 
     fn channels(&self) -> &[Sample] {
-        std::slice::from_ref(self)
+        core::slice::from_ref(self)
     }
 
     fn channels_mut(&mut self) -> &mut [Sample] {
-        std::slice::from_mut(self)
+        core::slice::from_mut(self)
     }
 }
 

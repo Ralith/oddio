@@ -1,4 +1,4 @@
-use std::{cell::Cell, f32::consts::TAU};
+use core::{cell::Cell, f32::consts::TAU};
 
 use crate::{Sample, Seek, Signal};
 

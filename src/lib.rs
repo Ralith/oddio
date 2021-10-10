@@ -35,6 +35,8 @@
 
 #![warn(missing_docs)]
 
+extern crate alloc;
+
 mod adapt;
 mod constant;
 mod cycle;
@@ -94,13 +96,13 @@ pub fn run<S: Signal + ?Sized>(signal: &S, sample_rate: u32, out: &mut [S::Frame
 /// The [`Handle`] can be used to control the signal concurrent with the [`SplitSignal`] being
 /// played
 pub fn split<S: Signal>(signal: S) -> (Handle<S>, SplitSignal<S>) {
-    let signal = std::sync::Arc::new(signal);
+    let signal = alloc::sync::Arc::new(signal);
     let handle = unsafe { Handle::from_arc(signal.clone()) };
     (handle, SplitSignal(signal))
 }
 
 /// A concurrently controlled [`Signal`]
-pub struct SplitSignal<S: ?Sized>(std::sync::Arc<S>);
+pub struct SplitSignal<S: ?Sized>(alloc::sync::Arc<S>);
 
 impl<S> Signal for SplitSignal<S>
 where
@@ -124,9 +126,9 @@ unsafe impl<S: ?Sized> Send for SplitSignal<S> {}
 ///
 /// Useful for adapting output buffers obtained externally.
 pub fn frame_stereo(xs: &mut [Sample]) -> &mut [[Sample; 2]] {
-    unsafe { std::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() / 2) }
+    unsafe { core::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() / 2) }
 }
 
 fn flatten_stereo(xs: &mut [[Sample; 2]]) -> &mut [Sample] {
-    unsafe { std::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() * 2) }
+    unsafe { core::slice::from_raw_parts_mut(xs.as_mut_ptr() as _, xs.len() * 2) }
 }
