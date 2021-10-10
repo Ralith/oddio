@@ -1,9 +1,9 @@
+use crate::{frame, Controlled, Filter, Frame, Signal, Smoothed};
 use core::{
     cell::RefCell,
     sync::atomic::{AtomicU32, Ordering},
 };
-
-use crate::{frame, Controlled, Filter, Frame, Signal, Smoothed};
+use libm::{log10f, powf};
 
 /// Amplifies a signal
 ///
@@ -78,7 +78,7 @@ unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
 impl<'a> GainControl<'a> {
     /// Get the current amplification in decibels
     pub fn gain(&self) -> f32 {
-        20.0 * self.amplitude_ratio().log10()
+        20.0 * log10f(self.amplitude_ratio())
     }
 
     /// Amplify the signal by `db` decibels
@@ -87,7 +87,7 @@ impl<'a> GainControl<'a> {
     ///
     /// Equivalent to `self.set_amplitude_ratio(10.0f32.powf(db / 20.0))`.
     pub fn set_gain(&mut self, db: f32) {
-        self.set_amplitude_ratio(10.0f32.powf(db / 20.0));
+        self.set_amplitude_ratio(powf(10.0f32, db / 20.0));
     }
 
     /// Get the current amplitude scaling factor

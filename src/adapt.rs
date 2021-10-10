@@ -1,6 +1,6 @@
-use core::cell::Cell;
-
 use crate::{Filter, Frame, Signal};
+use core::{cell::Cell, f32};
+use libm::{expf, sqrtf};
 
 /// Smoothly adjusts gain over time to keep average (RMS) signal level within a target range
 ///
@@ -56,8 +56,8 @@ impl Default for AdaptOptions {
         Self {
             tau: 0.1,
             max_gain: f32::INFINITY,
-            low: 0.1 / 2.0f32.sqrt(),
-            high: 0.5 / 2.0f32.sqrt(),
+            low: sqrtf(0.1 / 2.0f32),
+            high: sqrtf(0.5 / 2.0f32),
         }
     }
 }
@@ -69,13 +69,13 @@ where
     type Frame = T::Frame;
 
     fn sample(&self, interval: f32, out: &mut [T::Frame]) {
-        let alpha = 1.0 - (-interval / self.options.tau).exp();
+        let alpha = 1.0 - expf(-interval / self.options.tau);
         self.inner.sample(interval, out);
         for x in out {
             let sample = x.channels().iter().sum::<f32>();
             self.avg_squared
                 .set(sample * sample * alpha + self.avg_squared.get() * (1.0 - alpha));
-            let avg_peak = self.avg_squared.get().sqrt() * 2.0f32.sqrt();
+            let avg_peak = sqrtf(self.avg_squared.get()) * f32::consts::SQRT_2;
             let gain = if avg_peak < self.options.low {
                 (self.options.low / avg_peak).min(self.options.max_gain)
             } else if avg_peak > self.options.high {

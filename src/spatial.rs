@@ -1,8 +1,10 @@
 use alloc::sync::Arc;
 use core::{
     cell::RefCell,
+    f32,
     ops::{Index, IndexMut},
 };
+use libm::ceilf;
 
 use crate::{
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub},
@@ -37,7 +39,7 @@ impl<T> Spatial<T> {
         max_delay: f32,
         radius: f32,
     ) -> Self {
-        let mut queue = Ring::new((max_delay * rate as f32).ceil() as usize + 1);
+        let mut queue = Ring::new(ceilf(max_delay * rate as f32) as usize + 1);
         queue.delay(
             rate,
             (norm(position.into()) / SPEED_OF_SOUND).min(max_delay),
@@ -444,7 +446,7 @@ impl Ear {
 
     /// Unit vector along which sound is least attenuated
     fn dir(self) -> mint::Vector3<f32> {
-        let x = 2.0f32.sqrt() / 2.0;
+        let x = f32::consts::SQRT_2 * 0.5;
         [
             match self {
                 Ear::Left => -x,

@@ -1,6 +1,6 @@
-use core::{cell::Cell, f32::consts::TAU};
-
 use crate::{Sample, Signal};
+use core::{cell::Cell, f32::consts::TAU};
+use libm::sinf;
 
 /// A trivial [`Signal`] that produces a sine wave of a particular frequency, forever
 pub struct Sine {
@@ -35,7 +35,7 @@ impl Signal for Sine {
     fn sample(&self, interval: f32, out: &mut [Sample]) {
         for (i, x) in out.iter_mut().enumerate() {
             let t = interval * i as f32;
-            *x = (t * self.frequency + self.phase.get()).sin();
+            *x = sinf(t * self.frequency + self.phase.get());
         }
         self.seek_to(interval * out.len() as f32);
     }

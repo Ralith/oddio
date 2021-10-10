@@ -1,4 +1,4 @@
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc, vec};
 use core::cell::RefCell;
 
 use crate::{frame, set, Controlled, Frame, Handle, Set, SetHandle, Signal, Stop};

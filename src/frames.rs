@@ -1,12 +1,12 @@
-use crate::alloc::{alloc, sync::Arc};
+use crate::alloc::{alloc, boxed::Box, sync::Arc};
+use crate::{frame, math::fract, Controlled, Frame, Signal};
 use core::{
     mem,
     ops::{Deref, DerefMut},
     ptr,
     sync::atomic::{AtomicU64, Ordering},
 };
-
-use crate::{frame, Controlled, Frame, Signal};
+use libm::trunc;
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -96,8 +96,8 @@ impl<T> Frames<T> {
     where
         T: Frame + Copy,
     {
-        let x0 = s.trunc() as isize;
-        let fract = s.fract() as f32;
+        let x0 = trunc(s) as isize;
+        let fract = fract(s) as f32;
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);

@@ -1,4 +1,10 @@
-use crate::{frame, Sample, Signal};
+use crate::{
+    frame,
+    math::{fractf, rem_euclid},
+    Sample, Signal,
+};
+use alloc::{boxed::Box, vec};
+use libm::{ceilf, fabsf, truncf};
 
 pub struct Ring {
     buffer: Box<[Sample]>,
@@ -21,8 +27,8 @@ impl Ring {
         );
         let end = (self.write + dt * rate as f32) % self.buffer.len() as f32;
 
-        let start_idx = self.write.ceil() as usize;
-        let end_idx = end.ceil() as usize;
+        let start_idx = ceilf(self.write) as usize;
+        let end_idx = ceilf(end) as usize;
         let interval = 1.0 / rate as f32;
         if end_idx > start_idx {
             signal.sample(interval, &mut self.buffer[start_idx..end_idx]);
@@ -45,12 +51,12 @@ impl Ring {
     pub fn sample(&self, rate: u32, t: f32) -> f32 {
         debug_assert!(t < 0.0, "samples must lie in the past");
         debug_assert!(
-            ((t * rate as f32).abs().ceil() as usize) < self.buffer.len(),
+            (ceilf(fabsf(t * rate as f32)) as usize) < self.buffer.len(),
             "samples must lie less than a buffer period in the past"
         );
-        let s = (self.write + t * rate as f32).rem_euclid(self.buffer.len() as f32);
-        let x0 = s.trunc() as usize;
-        let fract = s.fract() as f32;
+        let s = rem_euclid(self.write + t * rate as f32, self.buffer.len() as f32);
+        let x0 = truncf(s) as usize;
+        let fract = fractf(s);
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);

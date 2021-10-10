@@ -1,4 +1,5 @@
 use crate::{Filter, Frame, Signal};
+use libm::fabsf;
 
 /// Smoothly maps a signal of any range into (-1, 1)
 ///
@@ -27,7 +28,7 @@ where
         self.0.sample(interval, out);
         for x in out {
             for channel in x.channels_mut() {
-                *channel /= 1.0 + channel.abs();
+                *channel /= 1.0 + fabsf(*channel);
             }
         }
     }

@@ -1,5 +1,49 @@
+use libm::{fabsf, sqrtf, trunc, truncf};
+
+pub fn powi(mut lhs: f32, mut rhs: i32) -> f32 {
+    let mut r = 1.0;
+    let invert = if rhs < 0 {
+        rhs *= -1;
+        true
+    } else {
+        false
+    };
+    loop {
+        if rhs % 2 == 1 {
+            r *= lhs;
+        }
+        rhs /= 2;
+        if rhs == 0 {
+            break;
+        }
+        lhs *= lhs;
+    }
+    if invert {
+        1.0 / r
+    } else {
+        r
+    }
+}
+
+pub fn rem_euclid(lhs: f32, rhs: f32) -> f32 {
+    let r = lhs % rhs;
+    if r < 0.0 {
+        r + fabsf(rhs)
+    } else {
+        r
+    }
+}
+
+pub fn fract(v: f64) -> f64 {
+    v - trunc(v)
+}
+
+pub fn fractf(v: f32) -> f32 {
+    v - truncf(v)
+}
+
 pub fn norm(x: mint::Vector3<f32>) -> f32 {
-    x.as_ref().iter().map(|&x| x.powi(2)).sum::<f32>().sqrt()
+    sqrtf(x.as_ref().iter().map(|&x| powi(x, 2)).sum::<f32>())
 }
 
 pub fn dot(x: mint::Vector3<f32>, y: mint::Vector3<f32>) -> f32 {

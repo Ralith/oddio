@@ -34,6 +34,7 @@
 //! - [`run`] writes frames from a [`Signal`] into an output buffer
 
 #![warn(missing_docs)]
+#![no_std]
 
 extern crate alloc;
 

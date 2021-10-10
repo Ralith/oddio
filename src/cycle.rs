@@ -1,7 +1,6 @@
+use crate::{frame, math::fractf, Frame, Frames, Signal};
 use alloc::sync::Arc;
 use core::cell::Cell;
-
-use crate::{frame, Frame, Frames, Signal};
 
 /// Loops [`Frames`] end-to-end to construct a repeating signal
 pub struct Cycle<T> {
@@ -27,7 +26,7 @@ impl<T> Cycle<T> {
     {
         let a = sample as usize;
         let b = (a + 1) % self.frames.len();
-        frame::lerp(&self.frames[a], &self.frames[b], sample.fract())
+        frame::lerp(&self.frames[a], &self.frames[b], fractf(sample))
     }
 }
 

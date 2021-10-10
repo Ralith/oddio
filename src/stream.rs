@@ -1,8 +1,9 @@
 //! Streaming audio support
 
+use crate::{frame, math::fractf, spsc, Controlled, Frame, Signal};
+use alloc::vec;
 use core::cell::{Cell, RefCell};
-
-use crate::{frame, spsc, Controlled, Frame, Signal};
+use libm::truncf;
 
 /// Dynamic audio from an external source
 pub struct Stream<T> {
@@ -55,8 +56,8 @@ impl<T> Stream<T> {
     where
         T: Frame + Copy,
     {
-        let x0 = s.trunc() as isize;
-        let fract = s.fract() as f32;
+        let x0 = truncf(s) as isize;
+        let fract = truncf(s) as f32;
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);
@@ -67,7 +68,7 @@ impl<T> Stream<T> {
         let mut inner = self.inner.borrow_mut();
         let t = (self.t.get() + dt * self.rate as f32).min((inner.len()) as f32);
         inner.release(t as usize);
-        self.t.set(t.fract());
+        self.t.set(fractf(t));
     }
 }
 

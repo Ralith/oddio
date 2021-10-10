@@ -13,6 +13,7 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 mint = "0.5.5"
+libm = "0.2.1"
 
 [dev-dependencies]
 cpal = "0.13.1"
