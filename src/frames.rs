@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use crate::{frame, Controlled, Frame, Signal};
+use crate::{frame, Controlled, Frame, Seek, Signal};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -172,6 +172,13 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
     #[inline]
     fn remaining(&self) -> f32 {
         (self.data.samples.len() as f64 / self.data.rate - self.t.get()) as f32
+    }
+}
+
+impl<T: Frame + Copy> Seek for FramesSignal<T> {
+    #[inline]
+    fn seek(&self, seconds: f32) {
+        self.t.set(self.t.get() + f64::from(seconds));
     }
 }
 
