@@ -18,7 +18,6 @@ fn main() {
         oddio::SpatialOptions {
             position: [-SPEED, 10.0, 0.0].into(),
             velocity: [SPEED, 0.0, 0.0].into(),
-            max_distance: 1000.0,
             radius: 0.1,
         },
     );

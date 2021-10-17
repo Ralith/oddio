@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::{Controlled, Filter, Signal};
+use crate::{Controlled, Filter, Seek, Signal};
 
 const PLAY: usize = 0;
 const PAUSE: usize = 1;
@@ -62,6 +62,12 @@ impl<T: ?Sized> Filter for Stop<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.inner
+    }
+}
+
+impl<T: ?Sized + Seek> Seek for Stop<T> {
+    fn seek(&self, seconds: f32) {
+        self.inner.seek(seconds);
     }
 }
 

@@ -9,17 +9,16 @@ use crate::{
     ring::Ring,
     set::{set, Set, SetHandle},
     swap::Swap,
-    Controlled, Filter, Handle, Sample, Signal, Stop,
+    Controlled, Filter, FilterHaving, Handle, Sample, Seek, Signal, Stop,
 };
 
-type ErasedSpatial = Arc<Spatial<Stop<dyn Signal<Frame = Sample> + Send>>>;
+type ErasedSpatialBuffered = Arc<SpatialBuffered<Stop<dyn Signal<Frame = Sample> + Send>>>;
+type ErasedSpatial = Arc<Spatial<Stop<dyn Seek<Frame = Sample> + Send>>>;
 
-/// An individual spatialized signal
-pub struct Spatial<T: ?Sized> {
+/// An individual buffered spatialized signal
+pub struct SpatialBuffered<T: ?Sized> {
     max_delay: f32,
-    radius: f32,
-    motion: Swap<Motion>,
-    state: RefCell<State>,
+    common: Common,
     /// Delay queue of sound propagating through the medium
     ///
     /// Accounts only for the source's velocity. Listener velocity and attenuation are handled at
@@ -28,7 +27,7 @@ pub struct Spatial<T: ?Sized> {
     inner: T,
 }
 
-impl<T> Spatial<T> {
+impl<T> SpatialBuffered<T> {
     fn new(
         rate: u32,
         inner: T,
@@ -44,30 +43,45 @@ impl<T> Spatial<T> {
         );
         Self {
             max_delay,
-            radius,
-            motion: Swap::new(Motion {
-                position,
-                velocity,
-                discontinuity: false,
-            }),
-            state: RefCell::new(State::new(position)),
+            common: Common::new(radius, position, velocity),
             queue: RefCell::new(queue),
             inner,
         }
     }
 }
 
-impl<T> Spatial<T>
-where
-    T: ?Sized + Signal<Frame = Sample>,
-{
-    fn remaining(&self) -> f32 {
-        let position = self
-            .state
-            .borrow()
-            .smoothed_position(0.0, unsafe { &*self.motion.received() });
-        let distance = norm(position.into());
-        self.inner.remaining() + distance / SPEED_OF_SOUND
+impl<T: ?Sized> Filter for SpatialBuffered<T> {
+    type Inner = T;
+    fn inner(&self) -> &T {
+        &self.inner
+    }
+}
+
+unsafe impl<'a, T: 'a> Controlled<'a> for SpatialBuffered<T> {
+    type Control = SpatialControl<'a>;
+
+    unsafe fn make_control(signal: &'a SpatialBuffered<T>) -> Self::Control {
+        SpatialControl(&signal.common.motion)
+    }
+}
+
+/// An individual seekable spatialized signal
+pub struct Spatial<T: ?Sized> {
+    common: Common,
+    inner: T,
+}
+
+impl<T> Spatial<T> {
+    fn new(
+        inner: T,
+        position: mint::Point3<f32>,
+        velocity: mint::Vector3<f32>,
+        radius: f32,
+    ) -> Self {
+        Self {
+            common: Common::new(radius, position, velocity),
+            inner,
+        }
     }
 }
 
@@ -78,16 +92,36 @@ impl<T: ?Sized> Filter for Spatial<T> {
     }
 }
 
-/// Control for updating the motion of a spatial signal
-pub struct SpatialControl<'a>(&'a Swap<Motion>);
-
 unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
     type Control = SpatialControl<'a>;
 
     unsafe fn make_control(signal: &'a Spatial<T>) -> Self::Control {
-        SpatialControl(&signal.motion)
+        SpatialControl(&signal.common.motion)
     }
 }
+
+struct Common {
+    radius: f32,
+    motion: Swap<Motion>,
+    state: RefCell<State>,
+}
+
+impl Common {
+    fn new(radius: f32, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
+        Self {
+            radius,
+            motion: Swap::new(Motion {
+                position,
+                velocity,
+                discontinuity: false,
+            }),
+            state: RefCell::new(State::new(position)),
+        }
+    }
+}
+
+/// Control for updating the motion of a spatial signal
+pub struct SpatialControl<'a>(&'a Swap<Motion>);
 
 impl<'a> SpatialControl<'a> {
     /// Update the position and velocity of the signal
@@ -122,8 +156,10 @@ impl<'a> SpatialControl<'a> {
 pub struct SpatialScene {
     rate: u32,
     buffer_duration: f32,
+    send_buffered: RefCell<SetHandle<ErasedSpatialBuffered>>,
     send: RefCell<SetHandle<ErasedSpatial>>,
     rot: Swap<mint::Quaternion<f32>>,
+    recv_buffered: RefCell<Set<ErasedSpatialBuffered>>,
     recv: RefCell<Set<ErasedSpatial>>,
 }
 
@@ -134,7 +170,8 @@ impl SpatialScene {
     /// may produce audible glitches when sounds exceed the `max_distance` they're constructed with. If
     /// in doubt, 0.1 is a reasonable guess.
     pub fn new(rate: u32, buffer_duration: f32) -> Self {
-        let (handle, set) = set();
+        let (seek_handle, seek_set) = set();
+        let (buffered_handle, buffered_set) = set();
         let rot = Swap::new(mint::Quaternion {
             s: 1.0,
             v: [0.0; 3].into(),
@@ -142,14 +179,89 @@ impl SpatialScene {
         SpatialScene {
             rate,
             buffer_duration,
-            send: RefCell::new(handle),
+            send_buffered: RefCell::new(buffered_handle),
+            send: RefCell::new(seek_handle),
             rot,
-            recv: RefCell::new(set),
+            recv_buffered: RefCell::new(buffered_set),
+            recv: RefCell::new(seek_set),
         }
     }
 }
 
 unsafe impl Send for SpatialScene {}
+
+fn walk_set<T, U, I>(
+    set: &mut Set<Arc<T>>,
+    get_common: impl Fn(&T) -> &Common,
+    prev_rot: &mint::Quaternion<f32>,
+    rot: &mint::Quaternion<f32>,
+    elapsed: f32,
+    mut mix_signal: impl FnMut(&T, mint::Point3<f32>, mint::Point3<f32>),
+) where
+    T: FilterHaving<Stop<U>, I> + ?Sized,
+    U: Signal + ?Sized,
+{
+    set.update();
+    for i in (0..set.len()).rev() {
+        let signal = &set[i];
+        let stop = <T as FilterHaving<Stop<U>, _>>::get(signal);
+        let common = get_common(signal);
+        if Arc::strong_count(signal) == 1 {
+            stop.handle_dropped();
+        }
+
+        let prev_position;
+        let next_position;
+        unsafe {
+            // Compute the signal's smoothed start/end positions over the sampled period
+            // TODO: Use historical positions
+            let mut state = common.state.borrow_mut();
+
+            // Update motion
+            let orig_next = *common.motion.received();
+            if common.motion.refresh() {
+                state.prev_position = if (*common.motion.received()).discontinuity {
+                    (*common.motion.received()).position
+                } else {
+                    state.smoothed_position(0.0, &orig_next)
+                };
+                state.dt = 0.0;
+            } else {
+                debug_assert_eq!(orig_next.position, (*common.motion.received()).position);
+            }
+
+            prev_position = rotate(
+                prev_rot,
+                &state.smoothed_position(0.0, &*common.motion.received()),
+            );
+            next_position = rotate(
+                rot,
+                &state.smoothed_position(elapsed, &*common.motion.received()),
+            );
+
+            // Set up for next time
+            state.dt += elapsed;
+        }
+
+        // Discard finished sources. If a source is moving away faster than the speed of sound, you
+        // might get a pop.
+        let distance = norm(prev_position.into());
+        let remaining = stop.remaining() + distance / SPEED_OF_SOUND;
+        if remaining <= 0.0 {
+            stop.stop();
+        }
+        if stop.is_stopped() {
+            set.remove(i);
+            continue;
+        }
+
+        if stop.is_paused() {
+            continue;
+        }
+
+        mix_signal(signal, prev_position, next_position);
+    }
+}
 
 /// Control for modifying a [`SpatialScene`]
 pub struct SpatialSceneControl<'a>(&'a SpatialScene);
@@ -179,18 +291,44 @@ impl<'a> SpatialSceneControl<'a> {
     /// examples for a detailed guide.
     pub fn play<S>(&mut self, signal: S, options: SpatialOptions) -> Handle<Spatial<Stop<S>>>
     where
-        S: Signal<Frame = Sample> + Send + 'static,
+        S: Seek<Frame = Sample> + Send + 'static,
     {
         let signal = Arc::new(Spatial::new(
-            self.0.rate,
             Stop::new(signal),
             options.position,
             options.velocity,
-            options.max_distance / SPEED_OF_SOUND + self.0.buffer_duration,
             options.radius,
         ));
         let handle = unsafe { Handle::from_arc(signal.clone()) };
         self.0.send.borrow_mut().insert(signal);
+        handle
+    }
+
+    /// Like [`play`](Self::play), but supports propagation delay for sources which do not implement `Seek` by
+    /// buffering.
+    ///
+    /// `max_distance` dictates the amount of propagation delay to allocate a buffer for; larger
+    /// values consume more memory. To avoid glitching, the signal should be inaudible at
+    /// `max_distance`.
+    pub fn play_buffered<S>(
+        &mut self,
+        signal: S,
+        options: SpatialOptions,
+        max_distance: f32,
+    ) -> Handle<SpatialBuffered<Stop<S>>>
+    where
+        S: Signal<Frame = Sample> + Send + 'static,
+    {
+        let signal = Arc::new(SpatialBuffered::new(
+            self.0.rate,
+            Stop::new(signal),
+            options.position,
+            options.velocity,
+            max_distance / SPEED_OF_SOUND + self.0.buffer_duration,
+            options.radius,
+        ));
+        let handle = unsafe { Handle::from_arc(signal.clone()) };
+        self.0.send_buffered.borrow_mut().insert(signal);
         handle
     }
 
@@ -213,8 +351,6 @@ pub struct SpatialOptions {
     pub position: mint::Point3<f32>,
     /// Initial velocity
     pub velocity: mint::Vector3<f32>,
-    /// Maximum distance having accurate propagation delay. Larger values consume more memory.
-    pub max_distance: f32,
     /// Distance of zero attenuation. Approaching closer does not increase volume.
     pub radius: f32,
 }
@@ -224,7 +360,6 @@ impl Default for SpatialOptions {
         Self {
             position: [0.0; 3].into(),
             velocity: [0.0; 3].into(),
-            max_distance: 100.0,
             radius: 0.1,
         }
     }
@@ -234,7 +369,7 @@ impl Signal for SpatialScene {
     type Frame = [Sample; 2];
 
     fn sample(&self, interval: f32, out: &mut [[Sample; 2]]) {
-        let set = &mut *self.recv.borrow_mut();
+        let set = &mut *self.recv_buffered.borrow_mut();
         // Update set contents
         set.update();
 
@@ -251,83 +386,78 @@ impl Signal for SpatialScene {
         }
 
         let elapsed = interval * out.len() as f32;
-        for i in (0..set.len()).rev() {
-            let signal = &set[i];
-            if Arc::strong_count(signal) == 1 {
-                signal.inner.handle_dropped();
-            }
-            // Discard finished sources
-            if signal.remaining() <= 0.0 {
-                signal.inner.stop();
-            }
-            if signal.inner.is_stopped() {
-                set.remove(i);
-                continue;
-            }
-            if signal.inner.is_paused() {
-                continue;
-            }
+        walk_set(
+            set,
+            |signal| &signal.common,
+            &prev_rot,
+            &rot,
+            elapsed,
+            |signal, prev_position, next_position| {
+                debug_assert!(signal.max_delay >= elapsed);
 
-            debug_assert!(signal.max_delay >= elapsed);
+                // Extend delay queue with new data
+                signal
+                    .queue
+                    .borrow_mut()
+                    .write(&signal.inner, self.rate, elapsed);
 
-            // Extend delay queue with new data
-            signal
-                .queue
-                .borrow_mut()
-                .write(&signal.inner, self.rate, elapsed);
+                // Mix into output
+                for &ear in &[Ear::Left, Ear::Right] {
+                    let prev_state = EarState::new(prev_position, ear, signal.common.radius);
+                    let next_state = EarState::new(next_position, ear, signal.common.radius);
 
-            // Compute the signal's smoothed start/end positions over the sampled period
-            // TODO: Use historical positions
-            let prev_position;
-            let next_position;
-            unsafe {
-                let mut state = signal.state.borrow_mut();
+                    // Clamp into the max length of the delay queue
+                    let prev_offset = (prev_state.offset - elapsed).max(-signal.max_delay);
+                    let next_offset = next_state.offset.max(-signal.max_delay);
 
-                // Update motion
-                let orig_next = *signal.motion.received();
-                if signal.motion.refresh() {
-                    state.prev_position = if (*signal.motion.received()).discontinuity {
-                        (*signal.motion.received()).position
-                    } else {
-                        state.smoothed_position(0.0, &orig_next)
-                    };
-                    state.dt = 0.0;
-                } else {
-                    debug_assert_eq!(orig_next.position, (*signal.motion.received()).position);
+                    let dt = (next_offset - prev_offset) / out.len() as f32;
+                    let d_gain = (next_state.gain - prev_state.gain) / out.len() as f32;
+
+                    for (i, frame) in out.iter_mut().enumerate() {
+                        let gain = prev_state.gain + i as f32 * d_gain;
+                        let t = prev_offset + i as f32 * dt;
+                        frame[ear as usize] += signal.queue.borrow().sample(self.rate, t) * gain;
+                    }
                 }
+            },
+        );
 
-                prev_position = rotate(
-                    &prev_rot,
-                    &state.smoothed_position(0.0, &*signal.motion.received()),
-                );
-                next_position = rotate(
-                    &rot,
-                    &state.smoothed_position(elapsed, &*signal.motion.received()),
-                );
-            }
+        let set = &mut *self.recv.borrow_mut();
+        // Update set contents
+        set.update();
+        walk_set(
+            set,
+            |signal| &signal.common,
+            &prev_rot,
+            &rot,
+            elapsed,
+            |signal, prev_position, next_position| {
+                for &ear in &[Ear::Left, Ear::Right] {
+                    let prev_state = EarState::new(prev_position, ear, signal.common.radius);
+                    let next_state = EarState::new(next_position, ear, signal.common.radius);
+                    signal.inner.seek(prev_state.offset); // Initial real time -> Initial delayed
 
-            // Mix into output
-            for &ear in &[Ear::Left, Ear::Right] {
-                let prev_state = EarState::new(prev_position, ear, signal.radius);
-                let next_state = EarState::new(next_position, ear, signal.radius);
+                    let effective_elapsed = (elapsed + next_state.offset) - prev_state.offset;
+                    let dt = effective_elapsed / out.len() as f32;
+                    let d_gain = (next_state.gain - prev_state.gain) / out.len() as f32;
 
-                // Clamp into the max length of the delay queue
-                let prev_offset = (prev_state.offset - elapsed).max(-signal.max_delay);
-                let next_offset = next_state.offset.max(-signal.max_delay);
-
-                let dt = (next_offset - prev_offset) / out.len() as f32;
-                let d_gain = (next_state.gain - prev_state.gain) / out.len() as f32;
-
-                for (i, frame) in out.iter_mut().enumerate() {
-                    let gain = prev_state.gain + i as f32 * d_gain;
-                    let t = prev_offset + i as f32 * dt;
-                    frame[ear as usize] += signal.queue.borrow().sample(self.rate, t) * gain;
+                    let mut buf = [0.0; 256];
+                    let mut i = 0;
+                    for chunk in out.chunks_mut(buf.len()) {
+                        signal.inner.sample(dt, &mut buf[..chunk.len()]);
+                        for (s, o) in buf.iter().copied().zip(chunk) {
+                            let gain = prev_state.gain + i as f32 * d_gain;
+                            o[ear as usize] += s * gain;
+                            i += 1;
+                        }
+                    }
+                    // Final delayed -> Initial real time
+                    signal.inner.seek(-effective_elapsed - prev_state.offset);
                 }
-            }
-
-            // Set up for next time
-            signal.state.borrow_mut().dt += elapsed;
-        }
+                // Initial real time -> Final real time
+                signal.inner.seek(elapsed);
+            },
+        );
     }
 
     #[inline]

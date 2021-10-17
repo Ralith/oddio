@@ -61,23 +61,28 @@ fn main() {
     // A common one is `Gain`, which lets us modulate the gain of the `Signal` (how loud it is)
     let gain = oddio::Gain::new(basic_signal, 1.0);
 
-    // The type given out from `.play` reflects the controls we placed in it.
-    // It will be a very complex type, so it can be useful to newtype or typedef.
-    // Notice the `Gain`, which is there because we wrapped our `FramesSignal` above with `Gain`.
+    // The type given out from `.play_buffered` reflects the controls we placed in it.  It will be a
+    // very complex type, so it can be useful to newtype or typedef.  Notice the `Gain`, which is
+    // there because we wrapped our `FramesSignal` above with `Gain`.
     type AudioHandle =
-        oddio::Handle<oddio::Spatial<oddio::Stop<oddio::Gain<oddio::FramesSignal<f32>>>>>;
+        oddio::Handle<oddio::SpatialBuffered<oddio::Stop<oddio::Gain<oddio::FramesSignal<f32>>>>>;
 
     // the speed at which we'll be moving around
     const SPEED: f32 = 50.0;
-    let mut signal: AudioHandle = scene_handle.control::<oddio::SpatialScene, _>().play(
-        gain,
-        oddio::SpatialOptions {
-            position: [-SPEED, 10.0, 0.0].into(),
-            velocity: [SPEED, 0.0, 0.0].into(),
-            max_distance: 1000.0,
-            radius: 0.1,
-        },
-    );
+    // `_play_buffered` is used because the dynamically adjustable `Gain` filter makes sample values
+    // non-deterministic. For immutable signals like a bare `FramesSignal`, the regular `play` is
+    // more efficient.
+    let mut signal: AudioHandle = scene_handle
+        .control::<oddio::SpatialScene, _>()
+        .play_buffered(
+            gain,
+            oddio::SpatialOptions {
+                position: [-SPEED, 10.0, 0.0].into(),
+                velocity: [SPEED, 0.0, 0.0].into(),
+                radius: 0.1,
+            },
+            1000.0,
+        );
 
     let start = Instant::now();
 
@@ -89,7 +94,7 @@ fn main() {
         }
 
         // Access our Spatial Controls
-        let mut spatial_control = signal.control::<oddio::Spatial<_>, _>();
+        let mut spatial_control = signal.control::<oddio::SpatialBuffered<_>, _>();
 
         // This has no noticable effect because it matches the initial velocity, but serves to
         // demonstrate that `Spatial` can smooth over the inevitable small timing inconsistencies
