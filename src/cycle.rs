@@ -1,6 +1,6 @@
 use std::{cell::Cell, sync::Arc};
 
-use crate::{frame, Frame, Frames, Signal};
+use crate::{frame, Frame, Frames, Seek, Signal};
 
 /// Loops [`Frames`] end-to-end to construct a repeating signal
 pub struct Cycle<T> {
@@ -40,6 +40,14 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
             self.cursor
                 .set((self.cursor.get() + ds) % self.frames.len() as f32);
         }
+    }
+}
+
+impl<T: Frame + Copy> Seek for Cycle<T> {
+    fn seek(&self, seconds: f32) {
+        self.cursor.set(
+            (self.cursor.get() + seconds * self.frames.rate() as f32) % self.frames.len() as f32,
+        );
     }
 }
 

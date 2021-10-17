@@ -34,6 +34,16 @@ pub trait Signal {
     fn handle_dropped(&self) {}
 }
 
+/// Audio signals which support seeking
+///
+/// Should only be implemented for signals which are defined deterministically in terms of absolute
+/// sample time. Nondeterministic or stateful behavior may produce audible glitches in downstream
+/// code.
+pub trait Seek: Signal {
+    /// Shift the starting point of the next `sample` call by `seconds`
+    fn seek(&self, seconds: f32);
+}
+
 /// Adapts a mono signal to output stereo by duplicating its output
 pub struct MonoToStereo<T: ?Sized>(T);
 
@@ -71,6 +81,12 @@ impl<T: ?Sized> Filter for MonoToStereo<T> {
 
     fn inner(&self) -> &Self::Inner {
         &self.0
+    }
+}
+
+impl<T: Seek + Signal<Frame = Sample>> Seek for MonoToStereo<T> {
+    fn seek(&self, seconds: f32) {
+        self.0.seek(seconds)
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{Filter, Frame, Signal};
+use crate::{Filter, Frame, Seek, Signal};
 
 /// Smoothly maps a signal of any range into (-1, 1)
 ///
@@ -46,5 +46,15 @@ impl<T> Filter for Reinhard<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.0
+    }
+}
+
+impl<T> Seek for Reinhard<T>
+where
+    T: Signal + Seek,
+    T::Frame: Frame,
+{
+    fn seek(&self, seconds: f32) {
+        self.0.seek(seconds);
     }
 }
