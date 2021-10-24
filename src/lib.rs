@@ -38,6 +38,7 @@
 mod adapt;
 mod constant;
 mod cycle;
+mod downmix;
 mod filter;
 mod frame;
 mod frames;
@@ -60,6 +61,7 @@ mod swap;
 pub use adapt::{Adapt, AdaptOptions};
 pub use constant::Constant;
 pub use cycle::Cycle;
+pub use downmix::Downmix;
 pub use filter::*;
 pub use frame::Frame;
 pub use frames::*;
