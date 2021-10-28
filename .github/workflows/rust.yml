@@ -51,6 +51,11 @@ jobs:
           command: fmt
           args: --all -- --check
 
+      - name: doc
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+
       - uses: actions-rs/cargo@v1
         if: always()
         with:
