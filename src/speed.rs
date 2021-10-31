@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::{Controlled, Filter, Frame, Signal};
 

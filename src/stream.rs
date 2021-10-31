@@ -1,6 +1,6 @@
 //! Streaming audio support
 
-use std::cell::{Cell, RefCell};
+use core::cell::{Cell, RefCell};
 
 use crate::{frame, spsc, Controlled, Frame, Signal};
 
@@ -126,6 +126,8 @@ impl<'a, T> StreamControl<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
 
     fn assert_out(stream: &Stream<f32>, expected: &[f32]) {

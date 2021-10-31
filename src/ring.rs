@@ -1,4 +1,5 @@
 use crate::{frame, Sample, Signal};
+use alloc::{boxed::Box, vec};
 
 pub struct Ring {
     buffer: Box<[Sample]>,
@@ -67,7 +68,7 @@ impl Ring {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use core::cell::Cell;
 
     use super::*;
 
