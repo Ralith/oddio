@@ -82,7 +82,7 @@ pub unsafe trait Controlled<'a>: Sized + 'a {
 ///
 /// Helper trait for [`Handle::control()`]. `Index` is [`Here`] or [`There`], and can generally be
 /// inferred.
-pub trait FilterHaving<T, Index> {
+pub trait FilterHaving<T: ?Sized, Index> {
     /// Get the `T` element of a filter chain
     fn get(&self) -> &T;
 }
@@ -93,13 +93,13 @@ pub struct Here(());
 /// `Index` value for [`FilterHaving`] representing the filter at position `T+1`
 pub struct There<T>(PhantomData<T>);
 
-impl<T> FilterHaving<T, Here> for T {
+impl<T: ?Sized> FilterHaving<T, Here> for T {
     fn get(&self) -> &T {
         self
     }
 }
 
-impl<T: Filter, U, I> FilterHaving<U, There<I>> for T
+impl<T: Filter + ?Sized, U: ?Sized, I> FilterHaving<U, There<I>> for T
 where
     T::Inner: FilterHaving<U, I>,
 {

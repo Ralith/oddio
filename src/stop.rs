@@ -58,7 +58,7 @@ impl<T: Signal + ?Sized> Signal for Stop<T> {
     }
 }
 
-impl<T> Filter for Stop<T> {
+impl<T: ?Sized> Filter for Stop<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.inner
