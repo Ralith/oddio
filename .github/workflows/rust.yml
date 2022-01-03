@@ -39,6 +39,11 @@ jobs:
         with:
           command: test
 
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
+
   lint:
     runs-on: ubuntu-latest
     steps:
