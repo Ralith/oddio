@@ -5,7 +5,7 @@ use core::{
 };
 
 use crate::{
-    math::{add, dot, invert_quat, mix, norm, rotate, scale, sub},
+    math::{add, dot, invert_quat, mix, norm, rotate, scale, sub, Float},
     ring::Ring,
     set::{set, Set, SetHandle},
     swap::Swap,

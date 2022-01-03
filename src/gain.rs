@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use crate::{frame, Controlled, Filter, Frame, Signal, Smoothed};
+use crate::{frame, math::Float, Controlled, Filter, Frame, Signal, Smoothed};
 
 /// Amplifies a signal
 ///

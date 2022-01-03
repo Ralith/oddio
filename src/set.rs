@@ -1,4 +1,4 @@
-use alloc::collections::vec_deque::VecDeque;
+use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use core::{cell::UnsafeCell, mem, ops::Deref};
 
 use crate::spsc;

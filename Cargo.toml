@@ -11,9 +11,14 @@ categories = ["multimedia::audio", "game-development"]
 [badges]
 maintenance = { status = "actively-developed" }
 
+[features]
+no_std = ["libm"]
+
 [dependencies]
 mint = "0.5.5"
+libm = { version = "0.2.1", optional = true }
 
 [dev-dependencies]
 cpal = "0.13.1"
 hound = "3.4"
+ 

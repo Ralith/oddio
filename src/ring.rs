@@ -1,4 +1,5 @@
-use crate::{frame, Sample, Signal};
+use crate::{frame, math::Float, Sample, Signal};
+use alloc::{boxed::Box, vec};
 
 pub struct Ring {
     buffer: Box<[Sample]>,

@@ -1,6 +1,6 @@
 use core::{cell::Cell, f32::consts::TAU};
 
-use crate::{Sample, Seek, Signal};
+use crate::{math::Float, Sample, Seek, Signal};
 
 /// A trivial [`Signal`] that produces a sine wave of a particular frequency, forever
 pub struct Sine {

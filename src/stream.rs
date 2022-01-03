@@ -2,7 +2,7 @@
 
 use core::cell::{Cell, RefCell};
 
-use crate::{frame, spsc, Controlled, Frame, Signal};
+use crate::{frame, math::Float, spsc, Controlled, Frame, Signal};
 
 /// Dynamic audio from an external source
 pub struct Stream<T> {
@@ -127,6 +127,7 @@ impl<'a, T> StreamControl<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     fn assert_out(stream: &Stream<f32>, expected: &[f32]) {
         let mut output = vec![0.0; expected.len()];

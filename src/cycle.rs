@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use core::cell::Cell;
 
-use crate::{frame, Frame, Frames, Seek, Signal};
+use crate::{frame, math::Float, Frame, Frames, Seek, Signal};
 
 /// Loops [`Frames`] end-to-end to construct a repeating signal
 pub struct Cycle<T> {

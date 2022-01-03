@@ -1,6 +1,6 @@
 use core::cell::Cell;
 
-use crate::{Filter, Frame, Signal};
+use crate::{math::Float, Filter, Frame, Signal};
 
 /// Smoothly adjusts gain over time to keep average (RMS) signal level within a target range
 ///

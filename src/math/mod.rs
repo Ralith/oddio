@@ -1,3 +1,33 @@
+#[cfg(not(feature = "no_std"))]
+mod std;
+
+#[cfg(feature = "no_std")]
+mod libm;
+
+pub(crate) trait Float {
+    fn abs(self) -> Self;
+
+    fn sqrt(self) -> Self;
+
+    fn exp(self) -> Self;
+
+    fn ceil(self) -> Self;
+
+    fn trunc(self) -> Self;
+
+    fn fract(self) -> Self;
+
+    fn log10(self) -> Self;
+
+    fn powf(self, n: Self) -> Self;
+
+    fn powi(self, n: i32) -> Self;
+
+    fn sin(self) -> Self;
+
+    fn rem_euclid(self, rhs: Self) -> Self;
+}
+
 pub fn norm(x: mint::Vector3<f32>) -> f32 {
     x.as_ref().iter().map(|&x| x.powi(2)).sum::<f32>().sqrt()
 }
