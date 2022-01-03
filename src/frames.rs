@@ -1,4 +1,4 @@
-use crate::alloc::{alloc, sync::Arc};
+use crate::alloc::{alloc, boxed::Box, sync::Arc};
 use core::{
     cell::Cell,
     mem,
@@ -7,7 +7,7 @@ use core::{
     sync::atomic::{AtomicIsize, Ordering},
 };
 
-use crate::{frame, Controlled, Frame, Seek, Signal};
+use crate::{frame, math::Float, Controlled, Frame, Seek, Signal};
 
 /// A sequence of static audio frames at a particular sample rate
 ///

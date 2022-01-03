@@ -33,9 +33,13 @@
 //! - [`Handle`] allows control of a signal while it's playing, from a mixer or [`split`]
 //! - [`run`] writes frames from a [`Signal`] into an output buffer
 
+#![allow(unused_imports)]
 #![warn(missing_docs)]
+#![no_std]
 
 extern crate alloc;
+#[cfg(not(feature = "no_std"))]
+extern crate std;
 
 mod adapt;
 mod constant;

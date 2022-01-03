@@ -1,4 +1,4 @@
-use crate::{Filter, Frame, Seek, Signal};
+use crate::{math::Float, Filter, Frame, Seek, Signal};
 
 /// Smoothly maps a signal of any range into (-1, 1)
 ///

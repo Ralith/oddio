@@ -1,4 +1,4 @@
-use crate::alloc::{alloc, sync::Arc};
+use crate::alloc::{alloc, boxed::Box, sync::Arc};
 use core::{
     cell::UnsafeCell,
     fmt, mem,
