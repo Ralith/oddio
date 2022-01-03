@@ -1,9 +1,10 @@
 use crate::alloc::{alloc, sync::Arc};
 use core::{
+    cell::Cell,
     mem,
     ops::{Deref, DerefMut},
     ptr,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicIsize, Ordering},
 };
 
 use crate::{frame, Controlled, Frame, Seek, Signal};
@@ -133,12 +134,16 @@ impl<T> DerefMut for Frames<T> {
 }
 
 /// An audio signal backed by a static sequence of samples
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FramesSignal<T> {
     /// Frames to play
     data: Arc<Frames<T>>,
     /// Playback position in seconds
-    t: AtomicF64,
+    t: Cell<f64>,
+    /// Approximation of t in samples, for reading from the control. We could store t's bits in an
+    /// AtomicU64 here, but that would sacrifice portability to platforms that don't have it,
+    /// e.g. mips32.
+    sample_t: AtomicIsize,
 }
 
 impl<T> FramesSignal<T> {
@@ -147,7 +152,8 @@ impl<T> FramesSignal<T> {
     /// `start_seconds` adjusts the initial playback position, and may be negative.
     pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> Self {
         Self {
-            t: AtomicF64::new(start_seconds),
+            t: Cell::new(start_seconds),
+            sample_t: AtomicIsize::new((start_seconds * data.rate) as isize),
             data,
         }
     }
@@ -165,6 +171,8 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
         }
         self.t
             .set(self.t.get() + f64::from(interval) * out.len() as f64);
+        self.sample_t
+            .store((self.t.get() * self.data.rate) as isize, Ordering::Relaxed);
     }
 
     #[inline]
@@ -180,6 +188,16 @@ impl<T: Frame + Copy> Seek for FramesSignal<T> {
     }
 }
 
+impl<T> Clone for FramesSignal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            t: self.t.clone(),
+            sample_t: AtomicIsize::new(self.sample_t.load(Ordering::Relaxed)),
+        }
+    }
+}
+
 impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
     fn from(samples: Arc<Frames<T>>) -> Self {
         Self::new(samples, 0.0)
@@ -187,13 +205,13 @@ impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
 }
 
 /// Thread-safe control for a [`FramesSignal`], giving access to current playback location.
-pub struct FramesSignalControl<'a>(&'a AtomicF64);
+pub struct FramesSignalControl<'a>(&'a AtomicIsize, f64);
 
 unsafe impl<'a, T: 'a> Controlled<'a> for FramesSignal<T> {
     type Control = FramesSignalControl<'a>;
 
     unsafe fn make_control(signal: &'a FramesSignal<T>) -> Self::Control {
-        FramesSignalControl(&signal.t)
+        FramesSignalControl(&signal.sample_t, signal.data.rate)
     }
 }
 
@@ -206,38 +224,7 @@ impl<'a> FramesSignalControl<'a> {
     /// Right now, we don't support a method to *set* the playback_position,
     /// as naively setting this variable causes audible distortions.
     pub fn playback_position(&self) -> f64 {
-        self.0.get()
-    }
-}
-
-/// An f64 encoded in a u64.
-#[repr(transparent)]
-#[derive(Debug, Default)]
-struct AtomicF64(AtomicU64);
-
-impl AtomicF64 {
-    /// Creates  a new AtomicF64
-    pub fn new(input: f64) -> Self {
-        AtomicF64(AtomicU64::new(input.to_bits()))
-    }
-
-    /// Loads the f64
-    pub fn get(&self) -> f64 {
-        let inner = self.0.load(Ordering::Relaxed);
-        f64::from_bits(inner)
-    }
-
-    /// Stores an f64
-    pub fn set(&self, value: f64) {
-        let inner = value.to_bits();
-        self.0.store(inner, Ordering::Relaxed);
-    }
-}
-
-impl Clone for AtomicF64 {
-    fn clone(&self) -> Self {
-        let value = self.0.load(Ordering::Relaxed);
-        Self(AtomicU64::new(value))
+        self.0.load(Ordering::Relaxed) as f64 / self.1
     }
 }
 
@@ -254,28 +241,40 @@ mod tests {
 
     #[test]
     fn playback_position() {
-        let signal = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0]), -2.5);
+        let signal = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0]), -2.0);
 
         // negatives are fine
-        let init = FramesSignalControl(&signal.t).playback_position();
-        assert_eq!(init, -2.5);
+        let init = FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position();
+        assert_eq!(init, -2.0);
 
         let mut buf = [0.0; 10];
 
         // get back to positive
-        signal.sample(0.25, &mut buf);
-        assert_eq!(0.0, FramesSignalControl(&signal.t).playback_position());
+        signal.sample(0.2, &mut buf);
+        assert_eq!(
+            0.0,
+            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
+        );
 
-        // sip the sample
-        signal.sample(0.25, &mut buf);
-        assert_eq!(2.5, FramesSignalControl(&signal.t).playback_position());
-        signal.sample(0.25, &mut buf);
-        assert_eq!(5.0, FramesSignalControl(&signal.t).playback_position());
+        signal.sample(0.1, &mut buf);
+        assert_eq!(
+            1.0,
+            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
+        );
+        signal.sample(0.1, &mut buf);
+        assert_eq!(
+            2.0,
+            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
+        );
+        signal.sample(0.2, &mut buf);
+        assert_eq!(
+            4.0,
+            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
+        );
         signal.sample(0.5, &mut buf);
-        assert_eq!(10.0, FramesSignalControl(&signal.t).playback_position());
-
-        // we can go over no problem too...
-        signal.sample(0.5, &mut buf);
-        assert_eq!(15.0, FramesSignalControl(&signal.t).playback_position());
+        assert_eq!(
+            9.0,
+            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
+        );
     }
 }
