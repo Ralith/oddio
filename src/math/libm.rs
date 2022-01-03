@@ -70,6 +70,10 @@ impl Float for f32 {
             r
         }
     }
+
+    fn tanh(self) -> Self {
+        libm::tanhf(self)
+    }
 }
 
 impl Float for f64 {
@@ -141,5 +145,9 @@ impl Float for f64 {
         } else {
             r
         }
+    }
+
+    fn tanh(self) -> Self {
+        libm::tanh(self)
     }
 }

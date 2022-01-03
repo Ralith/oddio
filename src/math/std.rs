@@ -44,6 +44,10 @@ impl Float for f32 {
     fn rem_euclid(self, rhs: Self) -> Self {
         Self::rem_euclid(self, rhs)
     }
+
+    fn tanh(self) -> Self {
+        Self::tanh(self)
+    }
 }
 
 impl Float for f64 {
@@ -89,5 +93,9 @@ impl Float for f64 {
 
     fn rem_euclid(self, rhs: Self) -> Self {
         Self::rem_euclid(self, rhs)
+    }
+
+    fn tanh(self) -> Self {
+        Self::tanh(self)
     }
 }

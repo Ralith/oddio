@@ -63,6 +63,7 @@ mod spsc;
 mod stop;
 mod stream;
 mod swap;
+mod tanh;
 
 pub use adapt::{Adapt, AdaptOptions};
 pub use constant::Constant;
@@ -83,6 +84,7 @@ pub use speed::{Speed, SpeedControl};
 pub use stop::*;
 pub use stream::{Stream, StreamControl};
 pub use swap::Swap;
+pub use tanh::Tanh;
 
 /// Unitless instantaneous sound wave amplitude measurement
 pub type Sample = f32;
