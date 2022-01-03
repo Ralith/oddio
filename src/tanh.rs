@@ -2,24 +2,18 @@ use crate::{math::Float, Filter, Frame, Seek, Signal};
 
 /// Smoothly maps a signal of any range into (-1, 1)
 ///
-/// For each input sample `x`, outputs `x / (1 + |x|)`.
-///
-/// When many signals are combined with a [`Mixer`](crate::Mixer) or [`Spatial`](crate::Spatial), or
-/// when spatial signals are very near by, audio can get arbitrarily loud. Because surprisingly loud
-/// audio can be disruptive and even damaging, it can be useful to limit the output range, but
-/// simple clamping introduces audible artifacts.
-///
-/// See also [`Tanh`](crate::Tanh), which distorts quiet sounds less, and loud sounds more.
-pub struct Reinhard<T>(T);
+/// For each input sample `x`, outputs `x.tanh()`. Similar to [`Reinhard`](crate::Reinhard), but
+/// distorts quiet sounds less, and loud sounds more.
+pub struct Tanh<T>(T);
 
-impl<T> Reinhard<T> {
-    /// Apply the Reinhard operator to `signal`
+impl<T> Tanh<T> {
+    /// Apply the hypberbolic tangent operator to `signal`
     pub fn new(signal: T) -> Self {
         Self(signal)
     }
 }
 
-impl<T: Signal> Signal for Reinhard<T>
+impl<T: Signal> Signal for Tanh<T>
 where
     T::Frame: Frame,
 {
@@ -29,7 +23,7 @@ where
         self.0.sample(interval, out);
         for x in out {
             for channel in x.channels_mut() {
-                *channel /= 1.0 + channel.abs();
+                *channel = channel.tanh();
             }
         }
     }
@@ -44,14 +38,14 @@ where
     }
 }
 
-impl<T> Filter for Reinhard<T> {
+impl<T> Filter for Tanh<T> {
     type Inner = T;
     fn inner(&self) -> &T {
         &self.0
     }
 }
 
-impl<T> Seek for Reinhard<T>
+impl<T> Seek for Tanh<T>
 where
     T: Signal + Seek,
     T::Frame: Frame,

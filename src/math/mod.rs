@@ -26,6 +26,8 @@ pub(crate) trait Float {
     fn sin(self) -> Self;
 
     fn rem_euclid(self, rhs: Self) -> Self;
+
+    fn tanh(self) -> Self;
 }
 
 pub fn norm(x: mint::Vector3<f32>) -> f32 {
