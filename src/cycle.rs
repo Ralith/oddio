@@ -6,7 +6,7 @@ use crate::{frame, math::Float, Frame, Frames, Seek, Signal};
 /// Loops [`Frames`] end-to-end to construct a repeating signal
 pub struct Cycle<T> {
     /// Current playback time, in samples
-    cursor: Cell<f32>,
+    cursor: Cell<f64>,
     frames: Arc<Frames<T>>,
 }
 
@@ -21,13 +21,13 @@ impl<T> Cycle<T> {
     }
 
     /// Interpolate a frame for position `sample`
-    fn interpolate(&self, sample: f32) -> T
+    fn interpolate(&self, sample: f64) -> T
     where
         T: Frame,
     {
         let a = sample as usize;
         let b = (a + 1) % self.frames.len();
-        frame::lerp(&self.frames[a], &self.frames[b], sample.fract())
+        frame::lerp(&self.frames[a], &self.frames[b], sample.fract() as f32)
     }
 }
 
@@ -35,11 +35,11 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
     type Frame = T;
 
     fn sample(&self, interval: f32, out: &mut [T]) {
-        let ds = interval * self.frames.rate() as f32;
+        let ds = interval as f64 * self.frames.rate() as f64;
         for x in out {
             *x = self.interpolate(self.cursor.get());
             self.cursor
-                .set((self.cursor.get() + ds) % self.frames.len() as f32);
+                .set((self.cursor.get() + ds) % self.frames.len() as f64);
         }
     }
 }
@@ -47,7 +47,8 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
 impl<T: Frame + Copy> Seek for Cycle<T> {
     fn seek(&self, seconds: f32) {
         self.cursor.set(
-            (self.cursor.get() + seconds * self.frames.rate() as f32) % self.frames.len() as f32,
+            (self.cursor.get() + f64::from(seconds) * self.frames.rate() as f64)
+                % self.frames.len() as f64,
         );
     }
 }
