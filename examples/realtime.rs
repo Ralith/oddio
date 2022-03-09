@@ -59,7 +59,7 @@ fn main() {
 
     // We can also add filters around our `FramesSignal` to make our sound more controllable.
     // A common one is `Gain`, which lets us modulate the gain of the `Signal` (how loud it is)
-    let gain = oddio::Gain::new(basic_signal, 1.0);
+    let gain = oddio::Gain::new(basic_signal);
 
     // The type given out from `.play_buffered` reflects the controls we placed in it.  It will be a
     // very complex type, so it can be useful to newtype or typedef.  Notice the `Gain`, which is
