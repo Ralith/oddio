@@ -9,7 +9,7 @@ use crate::{frame, math::Float, Controlled, Filter, Frame, Signal, Smoothed};
 ///
 /// To implement a volume control, place a gain combinator near the end of your pipeline where the
 /// input amplitude is initially in the range [0, 1] and pass decibels to [`GainControl::set_gain`],
-/// mapping the minimum volume to 0 decibels, and the minimum to e.g. -60.
+/// mapping the maximum volume to 0 decibels, and the minimum to e.g. -60.
 pub struct Gain<T: ?Sized> {
     shared: AtomicU32,
     gain: RefCell<Smoothed<f32>>,
