@@ -69,11 +69,11 @@ pub struct Gain<T: ?Sized> {
 }
 
 impl<T> Gain<T> {
-    /// Apply dynamic gain to `signal`, starting at `initial`
-    pub fn new(signal: T, initial: f32) -> Self {
+    /// Apply dynamic amplification to `signal`
+    pub fn new(signal: T) -> Self {
         Self {
-            shared: AtomicU32::new(initial.to_bits()),
-            gain: RefCell::new(Smoothed::new(initial)),
+            shared: AtomicU32::new(1.0f32.to_bits()),
+            gain: RefCell::new(Smoothed::new(1.0)),
             inner: signal,
         }
     }
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn smoothing() {
-        let s = Gain::new(Constant(1.0), 1.0);
+        let s = Gain::new(Constant(1.0));
         let mut buf = [0.0; 6];
         GainControl(&s.shared).set_amplitude_ratio(5.0);
         s.sample(0.025, &mut buf);
