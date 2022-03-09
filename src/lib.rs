@@ -72,7 +72,7 @@ pub use downmix::Downmix;
 pub use filter::*;
 pub use frame::Frame;
 pub use frames::*;
-pub use gain::{Gain, GainControl};
+pub use gain::{FixedGain, Gain, GainControl};
 pub use mixer::*;
 pub use reinhard::Reinhard;
 use set::*;
