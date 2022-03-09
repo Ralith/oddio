@@ -3,9 +3,61 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use crate::{frame, math::Float, Controlled, Filter, Frame, Signal, Smoothed};
+use crate::{frame, math::Float, Controlled, Filter, Frame, Seek, Signal, Smoothed};
 
-/// Amplifies a signal
+/// Amplifies a signal by a constant amount
+///
+/// Unlike [`Gain`], this can implement [`Seek`].
+pub struct FixedGain<T: ?Sized> {
+    gain: f32,
+    inner: T,
+}
+
+impl<T> FixedGain<T> {
+    /// Amplify `signal` by `db` decibels
+    ///
+    /// Decibels are perceptually linear. Negative values make the signal quieter.
+    pub fn new(signal: T, db: f32) -> Self {
+        Self {
+            gain: 10.0f32.powf(db / 20.0),
+            inner: signal,
+        }
+    }
+}
+
+impl<T: Signal + ?Sized> Signal for FixedGain<T>
+where
+    T::Frame: Frame,
+{
+    type Frame = T::Frame;
+
+    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+        self.inner.sample(interval, out);
+        for x in out {
+            *x = frame::scale(x, self.gain);
+        }
+    }
+
+    fn remaining(&self) -> f32 {
+        self.inner.remaining()
+    }
+
+    #[inline]
+    fn handle_dropped(&self) {
+        self.inner.handle_dropped();
+    }
+}
+
+impl<T: Seek + ?Sized> Seek for FixedGain<T>
+where
+    T::Frame: Frame,
+{
+    fn seek(&self, seconds: f32) {
+        self.inner.seek(seconds)
+    }
+}
+
+/// Amplifies a signal dynamically
 ///
 /// To implement a volume control, place a gain combinator near the end of your pipeline where the
 /// input amplitude is initially in the range [0, 1] and pass decibels to [`GainControl::set_gain`],

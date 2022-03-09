@@ -2,12 +2,10 @@ const DURATION_SECS: u32 = 2;
 const RATE: u32 = 44100;
 const BLOCK_SIZE: usize = 512;
 
-const QUIET_AMPLITUDE: f32 = 0.001;
-
 fn main() {
     let mixer = oddio::Adapt::new(
         oddio::Mixer::new(),
-        QUIET_AMPLITUDE / 2.0f32.sqrt(),
+        1e-3 / 2.0f32.sqrt(),
         oddio::AdaptOptions {
             tau: 0.1,
             max_gain: 1e6,
@@ -37,8 +35,8 @@ fn main() {
         }
     };
 
-    let quiet = oddio::Gain::new(oddio::Sine::new(0.0, 5e2), QUIET_AMPLITUDE);
-    let loud = oddio::Gain::new(oddio::Sine::new(0.0, 4e2), 0.8);
+    let quiet = oddio::FixedGain::new(oddio::Sine::new(0.0, 5e2), -60.0);
+    let loud = oddio::FixedGain::new(oddio::Sine::new(0.0, 4e2), -2.0);
 
     mixer.control::<oddio::Mixer<f32>, _>().play(quiet);
     drive();
