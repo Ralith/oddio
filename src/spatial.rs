@@ -17,6 +17,7 @@ type ErasedSpatial = Arc<Spatial<Stop<dyn Seek<Frame = Sample> + Send>>>;
 
 /// An individual buffered spatialized signal
 pub struct SpatialBuffered<T: ?Sized> {
+    rate: u32,
     max_delay: f32,
     common: Common,
     /// Delay queue of sound propagating through the medium
@@ -42,6 +43,7 @@ impl<T> SpatialBuffered<T> {
             (norm(position.into()) / SPEED_OF_SOUND).min(max_delay),
         );
         Self {
+            rate,
             max_delay,
             common: Common::new(radius, position, velocity),
             queue: RefCell::new(queue),
@@ -154,8 +156,6 @@ impl<'a> SpatialControl<'a> {
 
 /// [`Signal`] for stereo output from a spatial scene
 pub struct SpatialScene {
-    rate: u32,
-    buffer_duration: f32,
     send_buffered: RefCell<SetHandle<ErasedSpatialBuffered>>,
     send: RefCell<SetHandle<ErasedSpatial>>,
     rot: Swap<mint::Quaternion<f32>>,
@@ -166,10 +166,8 @@ pub struct SpatialScene {
 impl SpatialScene {
     /// Create a [`Signal`] for spatializing mono signals for stereo output
     ///
-    /// Samples its component signals at `rate`. Sampling more than `buffer_duration` seconds at once
-    /// may produce audible glitches when sounds exceed the `max_distance` they're constructed with. If
-    /// in doubt, 0.1 is a reasonable guess.
-    pub fn new(rate: u32, buffer_duration: f32) -> Self {
+    /// Samples its component signals at `rate`.
+    pub fn new() -> Self {
         let (seek_handle, seek_set) = set();
         let (buffered_handle, buffered_set) = set();
         let rot = Swap::new(mint::Quaternion {
@@ -177,8 +175,6 @@ impl SpatialScene {
             v: [0.0; 3].into(),
         });
         SpatialScene {
-            rate,
-            buffer_duration,
             send_buffered: RefCell::new(buffered_handle),
             send: RefCell::new(seek_handle),
             rot,
@@ -189,6 +185,12 @@ impl SpatialScene {
 }
 
 unsafe impl Send for SpatialScene {}
+
+impl Default for SpatialScene {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 fn walk_set<T, U, I>(
     set: &mut Set<Arc<T>>,
@@ -309,22 +311,28 @@ impl<'a> SpatialSceneControl<'a> {
     ///
     /// `max_distance` dictates the amount of propagation delay to allocate a buffer for; larger
     /// values consume more memory. To avoid glitching, the signal should be inaudible at
-    /// `max_distance`.
+    /// `max_distance`. `signal` is sampled at `rate` before resampling based on motion.
+    ///
+    /// Sampling the scene for more than `buffer_duration` seconds at once may produce audible
+    /// glitches when the signal exceeds `max_distance` from the listener. If in doubt, 0.1 is a
+    /// reasonable guess.
     pub fn play_buffered<S>(
         &mut self,
         signal: S,
         options: SpatialOptions,
         max_distance: f32,
+        rate: u32,
+        buffer_duration: f32,
     ) -> Handle<SpatialBuffered<Stop<S>>>
     where
         S: Signal<Frame = Sample> + Send + 'static,
     {
         let signal = Arc::new(SpatialBuffered::new(
-            self.0.rate,
+            rate,
             Stop::new(signal),
             options.position,
             options.velocity,
-            max_distance / SPEED_OF_SOUND + self.0.buffer_duration,
+            max_distance / SPEED_OF_SOUND + buffer_duration,
             options.radius,
         ));
         let handle = unsafe { Handle::from_arc(signal.clone()) };
@@ -399,7 +407,7 @@ impl Signal for SpatialScene {
                 signal
                     .queue
                     .borrow_mut()
-                    .write(&signal.inner, self.rate, elapsed);
+                    .write(&signal.inner, signal.rate, elapsed);
 
                 // Mix into output
                 for &ear in &[Ear::Left, Ear::Right] {
@@ -416,7 +424,7 @@ impl Signal for SpatialScene {
                     for (i, frame) in out.iter_mut().enumerate() {
                         let gain = prev_state.gain + i as f32 * d_gain;
                         let t = prev_offset + i as f32 * dt;
-                        frame[ear as usize] += signal.queue.borrow().sample(self.rate, t) * gain;
+                        frame[ear as usize] += signal.queue.borrow().sample(signal.rate, t) * gain;
                     }
                 }
             },
