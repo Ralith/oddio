@@ -12,7 +12,7 @@ fn main() {
             (t * 500.0 * 2.0 * core::f32::consts::PI).sin() * 80.0
         }),
     );
-    let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(RATE, 0.1));
+    let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new());
     scene_handle.control::<oddio::SpatialScene, _>().play(
         oddio::FramesSignal::from(boop),
         oddio::SpatialOptions {

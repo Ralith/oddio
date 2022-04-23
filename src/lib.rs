@@ -1,8 +1,7 @@
 //! Lightweight game audio
 //!
 //! ```no_run
-//! # let sample_rate = 44100;
-//! let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(sample_rate, 0.1));
+//! let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new());
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];

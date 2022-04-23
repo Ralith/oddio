@@ -21,7 +21,7 @@ fn main() {
 
     // create our oddio handles for a `SpatialScene`. We could also use a `Mixer`,
     // which doesn't spatialize signals.
-    let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new(sample_rate.0, 0.1));
+    let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new());
 
     // We send `scene` into this closure, where changes to `scene_handle` are reflected.
     // `scene_handle` is how we add new sounds and modify the scene live.
@@ -82,6 +82,8 @@ fn main() {
                 radius: 0.1,
             },
             1000.0,
+            sample_rate.0,
+            0.1,
         );
 
     let start = Instant::now();
