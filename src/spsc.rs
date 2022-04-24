@@ -91,6 +91,7 @@ impl<T> Sender<T> {
 
     /// Whether the receiver has been dropped
     // Could be `&self` since we don't allow new references to be created, but :effort:
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_closed(&mut self) -> bool {
         Arc::get_mut(&mut self.shared).is_some()
     }
@@ -130,6 +131,7 @@ impl<T> Receiver<T> {
 
     /// Whether the sender has been dropped
     // Could be `&self` since we don't allow new references to be created, but :effort:
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_closed(&mut self) -> bool {
         Arc::get_mut(&mut self.shared).is_some()
     }
