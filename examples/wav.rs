@@ -40,42 +40,10 @@ fn main() {
         hound::SampleFormat::Float => reader.samples::<f32>().collect(),
     };
     let mut samples = samples_result.unwrap();
-    let mut samples_stereo: Vec<_> = oddio::frame_stereo(&mut samples).to_vec();
 
-    if device_sample_rate != source_sample_rate {
-        // resample the sound to the device sample rate using linear interpolation
-        let old_sample_count = samples_stereo.len();
-        let new_sample_count = (length_seconds * device_sample_rate as f32).ceil() as usize;
-        let new_samples: Vec<_> = (1..(new_sample_count + 1))
-            .map(|new_sample_number| {
-                let old_sample_number = new_sample_number as f32
-                    * (source_sample_rate as f32 / device_sample_rate as f32);
-
-                // get the indices of the two samples that surround the old sample number
-                let left_index = old_sample_number
-                    .clamp(1.0, old_sample_count as f32)
-                    .floor() as usize
-                    - 1;
-                let right_index = (left_index + 1).min(old_sample_count - 1);
-
-                let left_sample = samples_stereo[left_index];
-                if left_index == right_index {
-                    [left_sample[0], left_sample[1]]
-                } else {
-                    let right_sample = samples_stereo[right_index];
-                    let t = old_sample_number % 1.0;
-                    [
-                        (1.0 - t) * left_sample[0] + t * right_sample[0],
-                        (1.0 - t) * left_sample[1] + t * right_sample[1],
-                    ]
-                }
-            })
-            .collect();
-        samples_stereo = new_samples;
-    }
-
-    // channels are interleaved, so we put them together
-    let sound_frames = oddio::Frames::from_iter(device_sample_rate, samples_stereo);
+    // channels are interleaved, so we put them together in stereo
+    let samples_stereo: Vec<_> = oddio::frame_stereo(&mut samples).to_vec();
+    let sound_frames = oddio::Frames::from_iter(source_sample_rate, samples_stereo);
 
     let (mut mixer_handle, mixer) = oddio::split(oddio::Mixer::new());
 
