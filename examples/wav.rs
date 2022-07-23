@@ -71,5 +71,5 @@ fn main() {
         .control::<oddio::Mixer<_>, _>()
         .play(oddio::FramesSignal::from(sound_frames));
 
-    thread::sleep(Duration::from_secs(length_seconds.ceil() as u64));
+    thread::sleep(Duration::from_secs_f32(length_seconds));
 }
