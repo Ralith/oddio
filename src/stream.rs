@@ -64,8 +64,13 @@ impl<T> Stream<T> {
     }
 
     fn advance(&self, dt: f32) {
+        let next = self.t.get() + dt * self.rate as f32;
+        if self.closed.get() {
+            self.t.set(next);
+            return;
+        }
         let mut inner = self.inner.borrow_mut();
-        let t = (self.t.get() + dt * self.rate as f32).min((inner.len()) as f32);
+        let t = next.min((inner.len()) as f32);
         inner.release(t as usize);
         self.t.set(t.fract());
     }
@@ -159,6 +164,6 @@ mod tests {
         s.sample(1.0, &mut [0.0]);
         assert_eq!(s.remaining(), 0.0);
         s.sample(1.0, &mut [0.0]);
-        assert_eq!(s.remaining(), 0.0);
+        assert_eq!(s.remaining(), -1.0);
     }
 }
