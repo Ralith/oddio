@@ -42,8 +42,8 @@ fn main() {
     let mut samples = samples_result.unwrap();
 
     // channels are interleaved, so we put them together in stereo
-    let samples_stereo: Vec<_> = oddio::frame_stereo(&mut samples).to_vec();
-    let sound_frames = oddio::Frames::from_iter(source_sample_rate, samples_stereo);
+    let samples_stereo = oddio::frame_stereo(&mut samples);
+    let sound_frames = oddio::Frames::from_slice(source_sample_rate, samples_stereo);
 
     let (mut mixer_handle, mixer) = oddio::split(oddio::Mixer::new());
 
