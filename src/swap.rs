@@ -15,15 +15,12 @@ pub struct Swap<T> {
 
 impl<T> Swap<T> {
     /// Create a channel initially holding `x`
-    pub fn new(x: T) -> Self
-    where
-        T: Clone,
-    {
+    pub fn new(mut init: impl FnMut() -> T) -> Self {
         Self {
             slots: [
-                UnsafeCell::new(x.clone()),
-                UnsafeCell::new(x.clone()),
-                UnsafeCell::new(x),
+                UnsafeCell::new(init()),
+                UnsafeCell::new(init()),
+                UnsafeCell::new(init()),
             ],
             send: Cell::new(0),
             shared: AtomicUsize::new(1),
@@ -81,7 +78,7 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let s = Swap::new(0);
+        let s = Swap::new(|| 0);
         unsafe {
             *s.pending() = 1;
             assert_eq!(*s.received(), 0);
