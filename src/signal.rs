@@ -34,6 +34,24 @@ pub trait Signal {
     fn handle_dropped(&self) {}
 }
 
+impl<T: Signal + ?Sized> Signal for alloc::boxed::Box<T> {
+    type Frame = T::Frame;
+
+    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+        (**self).sample(interval, out);
+    }
+
+    #[inline]
+    fn remaining(&self) -> f32 {
+        (**self).remaining()
+    }
+
+    #[inline]
+    fn handle_dropped(&self) {
+        (**self).handle_dropped();
+    }
+}
+
 /// Audio signals which support seeking
 ///
 /// Should only be implemented for signals which are defined deterministically in terms of absolute
@@ -42,6 +60,13 @@ pub trait Signal {
 pub trait Seek: Signal {
     /// Shift the starting point of the next `sample` call by `seconds`
     fn seek(&self, seconds: f32);
+}
+
+impl<T: Seek + ?Sized> Seek for alloc::boxed::Box<T> {
+    #[inline]
+    fn seek(&self, seconds: f32) {
+        (**self).seek(seconds);
+    }
 }
 
 /// Adapts a mono signal to output stereo by duplicating its output
