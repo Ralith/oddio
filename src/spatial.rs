@@ -112,7 +112,7 @@ impl Common {
     fn new(radius: f32, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
         Self {
             radius,
-            motion: Swap::new(Motion {
+            motion: Swap::new(|| Motion {
                 position,
                 velocity,
                 discontinuity: false,
@@ -170,7 +170,7 @@ impl SpatialScene {
     pub fn new() -> Self {
         let (seek_handle, seek_set) = set();
         let (buffered_handle, buffered_set) = set();
-        let rot = Swap::new(mint::Quaternion {
+        let rot = Swap::new(|| mint::Quaternion {
             s: 1.0,
             v: [0.0; 3].into(),
         });
