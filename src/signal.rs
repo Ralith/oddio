@@ -18,12 +18,12 @@ pub trait Signal {
     /// Sample frames separated by `interval` seconds each
     fn sample(&self, interval: f32, out: &mut [Self::Frame]);
 
-    /// Seconds until data runs out
+    /// Whether future calls to `sample` with a nonnegative `interval` will only produce zeroes
     ///
-    /// May be infinite for unbounded signals, or negative after advancing past the end.
+    /// Commonly used to determine when a `Signal` can be discarded.
     #[inline]
-    fn remaining(&self) -> f32 {
-        f32::INFINITY
+    fn is_finished(&self) -> bool {
+        false
     }
 
     /// Called when the signal's handle is dropped
@@ -42,8 +42,8 @@ impl<T: Signal + ?Sized> Signal for alloc::boxed::Box<T> {
     }
 
     #[inline]
-    fn remaining(&self) -> f32 {
-        (**self).remaining()
+    fn is_finished(&self) -> bool {
+        (**self).is_finished()
     }
 
     #[inline]
@@ -91,8 +91,8 @@ impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
         }
     }
 
-    fn remaining(&self) -> f32 {
-        self.0.remaining()
+    fn is_finished(&self) -> bool {
+        self.0.is_finished()
     }
 
     #[inline]

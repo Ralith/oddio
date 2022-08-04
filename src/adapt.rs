@@ -89,8 +89,8 @@ where
         }
     }
 
-    fn remaining(&self) -> f32 {
-        self.inner.remaining()
+    fn is_finished(&self) -> bool {
+        self.inner.is_finished()
     }
 }
 

@@ -121,8 +121,8 @@ where
         self.0.sample(interval, out);
     }
 
-    fn remaining(&self) -> f32 {
-        self.0.remaining()
+    fn is_finished(&self) -> bool {
+        self.0.is_finished()
     }
 }
 

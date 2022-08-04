@@ -73,8 +73,8 @@ where
     }
 
     #[inline]
-    fn remaining(&self) -> f32 {
-        f32::INFINITY
+    fn is_finished(&self) -> bool {
+        false
     }
 
     #[inline]

@@ -64,13 +64,9 @@ impl<T> Stream<T> {
     }
 
     fn advance(&self, dt: f32) {
-        let next = self.t.get() + dt * self.rate as f32;
-        if self.closed.get() {
-            self.t.set(next);
-            return;
-        }
         let mut inner = self.inner.borrow_mut();
-        let t = next.min((inner.len()) as f32);
+        let next = self.t.get() + dt * self.rate as f32;
+        let t = next.min(inner.len() as f32);
         inner.release(t as usize);
         self.t.set(t.fract());
     }
@@ -90,18 +86,18 @@ impl<T: Frame + Copy> Signal for Stream<T> {
         self.advance(interval * out.len() as f32);
     }
 
-    fn remaining(&self) -> f32 {
+    #[allow(clippy::float_cmp)]
+    fn is_finished(&self) -> bool {
         if !self.closed.get() {
-            return f32::INFINITY;
+            return false;
         }
-        let t = self.t.get();
-        self.inner.borrow_mut().update();
-        let total_seconds = self.inner.borrow().len() as f32 / self.rate as f32;
-        total_seconds - t
+        self.t.get() == self.inner.borrow().len() as f32
     }
 
     fn handle_dropped(&self) {
         self.closed.set(true);
+        // Make sure a following `is_finished` can see data was sent at the last moment
+        self.inner.borrow_mut().update();
     }
 }
 
@@ -156,14 +152,14 @@ mod tests {
     fn cleanup() {
         let s = Stream::<f32>::new(1, 4);
         assert_eq!(StreamControl(&s).write(&[1.0, 2.0]), 2);
-        assert_eq!(s.remaining(), f32::INFINITY);
+        assert!(!s.is_finished());
         s.handle_dropped();
-        assert_eq!(s.remaining(), 2.0);
+        assert!(!s.is_finished());
         s.sample(1.0, &mut [0.0]);
-        assert_eq!(s.remaining(), 1.0);
+        assert!(!s.is_finished());
         s.sample(1.0, &mut [0.0]);
-        assert_eq!(s.remaining(), 0.0);
+        assert!(s.is_finished());
         s.sample(1.0, &mut [0.0]);
-        assert_eq!(s.remaining(), -1.0);
+        assert!(s.is_finished());
     }
 }

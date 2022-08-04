@@ -32,8 +32,8 @@ where
         }
     }
 
-    fn remaining(&self) -> f32 {
-        self.0.remaining()
+    fn is_finished(&self) -> bool {
+        self.0.is_finished()
     }
 
     fn handle_dropped(&self) {

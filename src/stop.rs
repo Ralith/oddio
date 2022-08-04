@@ -43,13 +43,9 @@ impl<T: Signal + ?Sized> Signal for Stop<T> {
         self.inner.sample(interval, out);
     }
 
-    fn remaining(&self) -> f32 {
+    fn is_finished(&self) -> bool {
         let state = self.state.load(Ordering::Relaxed);
-        match state {
-            PLAY => self.inner.remaining(),
-            PAUSE => f32::INFINITY,
-            _ => 0.0,
-        }
+        state == STOP || self.inner.is_finished()
     }
 
     #[inline]

@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 use core::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     ops::{Index, IndexMut},
 };
 
@@ -106,6 +106,8 @@ struct Common {
     radius: f32,
     motion: Swap<Motion>,
     state: RefCell<State>,
+    /// How long ago the signal finished, if it did
+    finished_for: Cell<Option<f32>>,
 }
 
 impl Common {
@@ -118,6 +120,7 @@ impl Common {
                 discontinuity: false,
             }),
             state: RefCell::new(State::new(position)),
+            finished_for: Cell::new(None),
         }
     }
 }
@@ -248,9 +251,19 @@ fn walk_set<T, U, I>(
         // Discard finished sources. If a source is moving away faster than the speed of sound, you
         // might get a pop.
         let distance = norm(prev_position.into());
-        let remaining = stop.remaining() + distance / SPEED_OF_SOUND;
-        if remaining <= 0.0 {
-            stop.stop();
+        match common.finished_for.get() {
+            Some(t) => {
+                if t > distance / SPEED_OF_SOUND {
+                    stop.stop();
+                } else {
+                    common.finished_for.set(Some(t + elapsed));
+                }
+            }
+            None => {
+                if stop.is_finished() {
+                    common.finished_for.set(Some(elapsed));
+                }
+            }
         }
         if stop.is_stopped() {
             set.remove(i);
@@ -469,8 +482,8 @@ impl Signal for SpatialScene {
     }
 
     #[inline]
-    fn remaining(&self) -> f32 {
-        f32::INFINITY
+    fn is_finished(&self) -> bool {
+        false
     }
 }
 

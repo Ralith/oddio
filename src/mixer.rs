@@ -87,7 +87,7 @@ impl<T: Frame> Signal for Mixer<T> {
             if Arc::strong_count(signal) == 1 {
                 signal.handle_dropped();
             }
-            if signal.remaining() <= 0.0 {
+            if signal.is_finished() {
                 signal.stop();
             }
             if signal.is_stopped() {

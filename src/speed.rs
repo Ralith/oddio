@@ -31,9 +31,8 @@ where
         self.inner.sample(interval * speed, out);
     }
 
-    fn remaining(&self) -> f32 {
-        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
-        self.inner.remaining() / speed
+    fn is_finished(&self) -> bool {
+        self.inner.is_finished()
     }
 
     #[inline]
