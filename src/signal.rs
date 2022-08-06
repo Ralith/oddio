@@ -28,8 +28,8 @@ pub trait Signal {
 
     /// Called when the signal's handle is dropped
     ///
-    /// Useful for e.g. allowing [`Stream`](crate::Stream) to clean itself when no more data can be
-    /// supplied
+    /// Useful for e.g. allowing [`Stream`](crate::Stream) to clean itself up when no more data can
+    /// be supplied
     #[inline]
     fn handle_dropped(&self) {}
 }
