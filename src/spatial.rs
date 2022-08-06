@@ -613,3 +613,64 @@ const SPEED_OF_SOUND: f32 = 343.0;
 
 /// Distance from center of head to an ear (m)
 const HEAD_RADIUS: f32 = 0.1075;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FinishedSignal;
+
+    impl Signal for FinishedSignal {
+        type Frame = f32;
+
+        fn sample(&self, _: f32, out: &mut [Self::Frame]) {
+            out.fill(0.0);
+        }
+
+        fn is_finished(&self) -> bool {
+            true
+        }
+    }
+
+    impl Seek for FinishedSignal {
+        fn seek(&self, _: f32) {}
+    }
+
+    /// Verify that a signal is dropped only after accounting for propagation delay
+    #[test]
+    fn signal_finished() {
+        let scene = SpatialScene::new();
+        SpatialSceneControl(&scene).play(
+            FinishedSignal,
+            SpatialOptions {
+                // Exactly one second of propagation delay
+                position: [SPEED_OF_SOUND, 0.0, 0.0].into(),
+                ..SpatialOptions::default()
+            },
+        );
+        scene.sample(0.0, &mut []);
+        assert_eq!(
+            scene.recv.borrow().len(),
+            1,
+            "signal remains after no time has passed"
+        );
+        scene.sample(0.6, &mut [[0.0; 2]]);
+        assert_eq!(
+            scene.recv.borrow().len(),
+            1,
+            "signal remains partway through propagation"
+        );
+        scene.sample(0.6, &mut [[0.0; 2]]);
+        assert_eq!(
+            scene.recv.borrow().len(),
+            1,
+            "signal remains immediately after propagation delay expires"
+        );
+        scene.sample(0.0, &mut []);
+        assert_eq!(
+            scene.recv.borrow().len(),
+            0,
+            "signal dropped on first past after propagation delay expires"
+        );
+    }
+}
