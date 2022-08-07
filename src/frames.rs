@@ -93,6 +93,7 @@ impl<T> Frames<T> {
     ///
     /// Note that `s` is in samples, not seconds. Whole numbers are always an exact sample, and
     /// out-of-range positions yield 0.
+    #[inline(always)]
     pub fn interpolate(&self, s: f64) -> T
     where
         T: Frame + Copy,
@@ -105,6 +106,7 @@ impl<T> Frames<T> {
         frame::lerp(&a, &b, fract)
     }
 
+    #[inline(always)]
     fn get(&self, sample: isize) -> T
     where
         T: Frame + Copy,
