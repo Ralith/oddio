@@ -100,25 +100,31 @@ impl<T> Frames<T> {
     {
         let x0 = s.trunc() as isize;
         let fract = s.fract() as f32;
-        let x1 = x0 + 1;
-        let a = self.get(x0);
-        let b = self.get(x1);
+        let (a, b) = self.get_pair(x0);
         frame::lerp(&a, &b, fract)
     }
 
     #[inline(always)]
-    fn get(&self, sample: isize) -> T
+    fn get_pair(&self, sample: isize) -> (T, T)
     where
         T: Frame + Copy,
     {
-        if sample < 0 {
-            return T::ZERO;
+        if sample >= 0 {
+            let sample = sample as usize;
+            if sample < self.samples.len() - 1 {
+                (self.samples[sample], self.samples[sample + 1])
+            } else if sample < self.samples.len() {
+                (self.samples[sample], T::ZERO)
+            } else {
+                (T::ZERO, T::ZERO)
+            }
+        } else {
+            if sample < -1 {
+                (T::ZERO, T::ZERO)
+            } else {
+                (T::ZERO, self.samples[0])
+            }
         }
-        let sample = sample as usize;
-        if sample >= self.samples.len() {
-            return T::ZERO;
-        }
-        self.samples[sample]
     }
 }
 
