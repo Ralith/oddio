@@ -173,9 +173,15 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
     #[inline]
     fn sample(&self, interval: f32, out: &mut [T]) {
         let s0 = self.t.get() * self.data.rate;
-        let ds = f64::from(interval) * self.data.rate;
-        for (i, o) in out.iter_mut().enumerate() {
-            *o = self.data.interpolate(s0 + ds * i as f64);
+        let ds = interval * self.data.rate as f32;
+        let base = s0.trunc() as isize;
+        let mut offset = s0.fract() as f32;
+        for o in out.iter_mut() {
+            let trunc = offset.trunc();
+            let (a, b) = self.data.get_pair(base + trunc as isize);
+            let fract = offset - trunc;
+            *o = frame::lerp(&a, &b, fract);
+            offset += ds;
         }
         self.t
             .set(self.t.get() + f64::from(interval) * out.len() as f64);
