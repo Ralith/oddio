@@ -118,12 +118,10 @@ impl<T> Frames<T> {
             } else {
                 (T::ZERO, T::ZERO)
             }
+        } else if sample < -1 {
+            (T::ZERO, T::ZERO)
         } else {
-            if sample < -1 {
-                (T::ZERO, T::ZERO)
-            } else {
-                (T::ZERO, self.samples[0])
-            }
+            (T::ZERO, self.samples[0])
         }
     }
 }
