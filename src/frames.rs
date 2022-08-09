@@ -175,9 +175,9 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
         let base = s0.trunc() as isize;
         let mut offset = s0.fract() as f32;
         for o in out.iter_mut() {
-            let trunc = offset.trunc();
-            let (a, b) = self.data.get_pair(base + trunc as isize);
-            let fract = offset - trunc;
+            let trunc = unsafe { offset.to_int_unchecked::<isize>() };
+            let (a, b) = self.data.get_pair(base + trunc);
+            let fract = offset - trunc as f32;
             *o = frame::lerp(&a, &b, fract);
             offset += ds;
         }
