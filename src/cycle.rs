@@ -25,9 +25,13 @@ impl<T> Cycle<T> {
     where
         T: Frame,
     {
-        let a = sample as usize;
-        let b = (a + 1) % self.frames.len();
-        frame::lerp(&self.frames[a], &self.frames[b], sample.fract() as f32)
+        let a = unsafe { sample.to_int_unchecked::<usize>() };
+        let fract = sample - a as f64;
+        if a < self.frames.len() - 1 {
+            frame::lerp(&self.frames[a], &self.frames[a + 1], fract as f32)
+        } else {
+            frame::lerp(&self.frames[a], &self.frames[0], fract as f32)
+        }
     }
 }
 
@@ -36,11 +40,33 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
 
     fn sample(&self, interval: f32, out: &mut [T]) {
         let ds = interval as f64 * self.frames.rate() as f64;
-        for x in out {
-            *x = self.interpolate(self.cursor.get());
-            self.cursor
-                .set((self.cursor.get() + ds) % self.frames.len() as f64);
+        let len = self.frames.len() as f64;
+        let mut s = self.cursor.get();
+        if s < 0.0 {
+            s += len;
         }
+        // Check if we can omit wraparound checks in the inner loop.
+        let end = s + (ds + f64::EPSILON) * out.len() as f64;
+        if end < len {
+            let base = s.trunc() as usize;
+            let mut offset = s.fract() as f32;
+            s += ds * out.len() as f64;
+            for x in out {
+                let trunc = unsafe { offset.to_int_unchecked::<usize>() };
+                let fract = offset - trunc as f32;
+                *x = frame::lerp(&self.frames[base + trunc], &self.frames[base + trunc + 1], fract);
+                offset += ds as f32;
+            }
+        } else {
+            for x in out {
+                *x = self.interpolate(s);
+                s += ds;
+                if s >= len {
+                    s %= len;
+                }
+            }
+        }
+        self.cursor.set(s);
     }
 }
 
