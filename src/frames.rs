@@ -98,8 +98,8 @@ impl<T> Frames<T> {
     where
         T: Frame + Copy,
     {
-        let x0 = s.trunc() as isize;
-        let fract = s.fract() as f32;
+        let x0 = s as isize;
+        let fract = (s - x0 as f64) as f32;
         let (a, b) = self.get_pair(x0);
         frame::lerp(&a, &b, fract)
     }
@@ -172,7 +172,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
     fn sample(&self, interval: f32, out: &mut [T]) {
         let s0 = self.t.get() * self.data.rate;
         let ds = interval * self.data.rate as f32;
-        let base = s0.trunc() as isize;
+        let base = s0 as isize;
         let mut offset = s0.fract() as f32;
         for o in out.iter_mut() {
             let trunc = unsafe { offset.to_int_unchecked::<isize>() };
