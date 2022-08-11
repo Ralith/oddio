@@ -173,7 +173,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
         let s0 = self.t.get() * self.data.rate;
         let ds = interval * self.data.rate as f32;
         let base = s0 as isize;
-        let mut offset = s0.fract() as f32;
+        let mut offset = (s0 - base as f64) as f32;
         for o in out.iter_mut() {
             let trunc = unsafe { offset.to_int_unchecked::<isize>() };
             let (a, b) = self.data.get_pair(base + trunc);
