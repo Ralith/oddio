@@ -37,7 +37,7 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
             } else if x < self.frames.len() {
                 (self.frames[x], self.frames[0])
             } else {
-                offset = (x - self.frames.len()) as f32;
+                offset = (x - self.frames.len()) as f32 + fract;
                 base = 0;
                 let x = unsafe { offset.to_int_unchecked::<usize>() };
                 (self.frames[x], self.frames[x + 1])
@@ -83,5 +83,24 @@ mod tests {
         s.sample(1.0, &mut buf[..2]);
         s.sample(1.0, &mut buf[2..]);
         assert_eq!(buf, [1.0, 2.0, 3.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn wrap_fract() {
+        let s = Cycle::new(Frames::from_slice(1, FRAMES));
+        let mut buf = [0.0; 8];
+        s.sample(0.5, &mut buf[..2]);
+        s.sample(0.5, &mut buf[2..]);
+        assert_eq!(buf, [1.0, 1.5, 2.0, 2.5, 3.0, 2.0, 1.0, 1.5]);
+    }
+
+    #[test]
+    fn wrap_fract_offset() {
+        let s = Cycle::new(Frames::from_slice(1, FRAMES));
+        s.seek(0.25);
+        let mut buf = [0.0; 7];
+        s.sample(0.5, &mut buf[..2]);
+        s.sample(0.5, &mut buf[2..]);
+        assert_eq!(buf, [1.25, 1.75, 2.25, 2.75, 2.5, 1.5, 1.25]);
     }
 }
