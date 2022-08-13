@@ -70,6 +70,11 @@ impl<T> Smoothed<T> {
     {
         self.prev.interpolate(&self.next, self.progress)
     }
+
+    /// Get the value most recently passed to `set`
+    pub fn target(&self) -> &T {
+        &self.next
+    }
 }
 
 /// Types that can be linearly interpolated, for use with [`Smoothed`]
