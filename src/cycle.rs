@@ -57,12 +57,8 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
 impl<T: Frame + Copy> Seek for Cycle<T> {
     fn seek(&self, seconds: f32) {
         let s = (self.cursor.get() + f64::from(seconds) * self.frames.rate() as f64)
-            % self.frames.len() as f64;
-        if s < 0.0 {
-            self.cursor.set(s + self.frames.len() as f64);
-        } else {
-            self.cursor.set(s);
-        }
+            .rem_euclid(self.frames.len() as f64);
+        self.cursor.set(s);
     }
 }
 
