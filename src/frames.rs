@@ -173,13 +173,23 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
         let s0 = self.t.get() * self.data.rate;
         let ds = interval * self.data.rate as f32;
         let base = s0 as isize;
-        let mut offset = (s0 - base as f64) as f32;
-        for o in out.iter_mut() {
-            let trunc = unsafe { offset.to_int_unchecked::<isize>() };
-            let (a, b) = self.data.get_pair(base + trunc);
-            let fract = offset - trunc as f32;
-            *o = frame::lerp(&a, &b, fract);
-            offset += ds;
+        if (ds - 1.0).abs() <= f32::EPSILON {
+            // This fast-path is important for Spatial::play_buffered where we sample the signal
+            // into the Ring with the interval = 1 / rate.
+            let fract = (s0 - base as f64) as f32;
+            for (i, o) in out.iter_mut().enumerate() {
+                let (a, b) = self.data.get_pair(base + i as isize);
+                *o = frame::lerp(&a, &b, fract);
+            }
+        } else {
+            let mut offset = (s0 - base as f64) as f32;
+            for o in out.iter_mut() {
+                let trunc = unsafe { offset.to_int_unchecked::<isize>() };
+                let (a, b) = self.data.get_pair(base + trunc);
+                let fract = offset - trunc as f32;
+                *o = frame::lerp(&a, &b, fract);
+                offset += ds;
+            }
         }
         self.t
             .set(self.t.get() + f64::from(interval) * out.len() as f64);
@@ -243,12 +253,28 @@ impl<'a> FramesSignalControl<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ::alloc::vec;
+
+    fn assert_out(stream: &FramesSignal<f32>, interval: f32, expected: &[f32]) {
+        let mut output = vec![0.0; expected.len()];
+        stream.sample(interval, &mut output);
+        assert_eq!(&output, expected);
+    }
 
     #[test]
     fn from_slice() {
         const DATA: &[f32] = &[1.0, 2.0, 3.0];
         let frames = Frames::from_slice(1, DATA);
         assert_eq!(&frames[..], DATA);
+    }
+
+    #[test]
+    fn sample() {
+        let signal = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0, 4.0]), -2.0);
+
+        assert_out(&signal, 0.25, &[0.0, 0.0, 0.0, 0.0]);
+        assert_out(&signal, 0.5, &[0.0, 0.5, 1.0]);
+        assert_out(&signal, 1.0, &[1.5, 2.5, 3.5, 2.0, 0.0]);
     }
 
     #[test]
