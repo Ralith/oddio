@@ -90,7 +90,7 @@ where
         self.inner.sample(interval, out);
         let shared = f32::from_bits(self.shared.load(Ordering::Relaxed));
         let mut gain = self.gain.borrow_mut();
-        if gain.get() != shared {
+        if gain.target() != &shared {
             gain.set(shared);
         }
         for x in out {
