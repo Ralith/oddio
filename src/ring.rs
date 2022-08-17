@@ -41,28 +41,39 @@ impl Ring {
         self.write = (self.write + rate as f32 * dt) % self.buffer.len() as f32;
     }
 
-    /// Get the recorded signal at a certain sample, relative to the *write* cursor. `t` must be
+    /// Get the recorded signal at a certain range, relative to the *write* cursor. `t` must be
     /// negative.
-    pub fn sample(&self, rate: u32, t: f32) -> f32 {
+    pub fn sample(&self, rate: u32, t: f32, interval: f32, out: &mut [Sample]) {
         debug_assert!(t < 0.0, "samples must lie in the past");
         debug_assert!(
             ((t * rate as f32).abs().ceil() as usize) < self.buffer.len(),
             "samples must lie less than a buffer period in the past"
         );
-        let s = (self.write + t * rate as f32).rem_euclid(self.buffer.len() as f32);
-        let x0 = s.trunc() as usize;
-        let fract = s.fract() as f32;
-        let x1 = x0 + 1;
-        let a = self.get(x0);
-        let b = self.get(x1);
-        frame::lerp(&a, &b, fract)
-    }
-
-    fn get(&self, sample: usize) -> f32 {
-        if sample >= self.buffer.len() {
-            return 0.0;
+        let s0 = (self.write + t * rate as f32).rem_euclid(self.buffer.len() as f32);
+        let ds = interval * rate as f32;
+        let mut base = s0 as usize;
+        let mut offset = s0 - base as f32;
+        for o in out.iter_mut() {
+            let trunc = unsafe { offset.to_int_unchecked::<usize>() };
+            let fract = offset - trunc as f32;
+            let x = base + trunc;
+            let (a, b) = if x < self.buffer.len() - 1 {
+                (self.buffer[x], self.buffer[x + 1])
+            } else if x < self.buffer.len() {
+                (self.buffer[x], self.buffer[0])
+            } else {
+                base = 0;
+                offset = (x % self.buffer.len()) as f32 + fract;
+                let x = unsafe { offset.to_int_unchecked::<usize>() };
+                if x < self.buffer.len() - 1 {
+                    (self.buffer[x], self.buffer[x + 1])
+                } else {
+                    (self.buffer[x], self.buffer[0])
+                }
+            };
+            *o = frame::lerp(&a, &b, fract);
+            offset += ds;
         }
-        self.buffer[sample]
     }
 }
 
@@ -97,6 +108,14 @@ mod tests {
         r.write(&s, 1, 2.0);
         assert_eq!(r.write, 3.0);
         assert_eq!(r.buffer[..], [1.0, 2.0, 3.0, 0.0]);
+
+        let mut out1 = [0.0f32; 2];
+        r.sample(1, -1.5, 1.0, &mut out1);
+        assert_eq!(out1, [2.5, 1.5]);
+
+        let mut out2 = [0.0f32; 4];
+        r.sample(1, -1.5, 0.25, &mut out2);
+        assert_eq!(out2, [2.5, 2.75, 3.0, 2.25]);
     }
 
     #[test]
@@ -109,5 +128,9 @@ mod tests {
 
         r.write(&s, 1, 3.0);
         assert_eq!(r.buffer[..], [5.0, 6.0, 3.0, 4.0]);
+
+        let mut out = [0.0f32; 6];
+        r.sample(1, -2.75, 0.5, &mut out);
+        assert_eq!(out, [4.25, 4.75, 5.25, 5.75, 5.25, 3.75]);
     }
 }

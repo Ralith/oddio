@@ -406,6 +406,7 @@ impl Signal for SpatialScene {
             *frame = [0.0; 2];
         }
 
+        let mut buf = [0.0; 256];
         let elapsed = interval * out.len() as f32;
         walk_set(
             set,
@@ -434,10 +435,16 @@ impl Signal for SpatialScene {
                     let dt = (next_offset - prev_offset) / out.len() as f32;
                     let d_gain = (next_state.gain - prev_state.gain) / out.len() as f32;
 
-                    for (i, frame) in out.iter_mut().enumerate() {
-                        let gain = prev_state.gain + i as f32 * d_gain;
+                    let mut i = 0;
+                    let queue = signal.queue.borrow();
+                    for chunk in out.chunks_mut(buf.len()) {
                         let t = prev_offset + i as f32 * dt;
-                        frame[ear as usize] += signal.queue.borrow().sample(signal.rate, t) * gain;
+                        queue.sample(signal.rate, t, dt, &mut buf[..chunk.len()]);
+                        for (s, o) in buf.iter().copied().zip(chunk) {
+                            let gain = prev_state.gain + i as f32 * d_gain;
+                            o[ear as usize] += s * gain;
+                            i += 1;
+                        }
                     }
                 }
             },
@@ -462,7 +469,6 @@ impl Signal for SpatialScene {
                     let dt = effective_elapsed / out.len() as f32;
                     let d_gain = (next_state.gain - prev_state.gain) / out.len() as f32;
 
-                    let mut buf = [0.0; 256];
                     let mut i = 0;
                     for chunk in out.chunks_mut(buf.len()) {
                         signal.inner.sample(dt, &mut buf[..chunk.len()]);
