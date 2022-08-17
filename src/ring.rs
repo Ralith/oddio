@@ -96,6 +96,12 @@ mod tests {
         }
     }
 
+    fn assert_out(r: &Ring, rate: u32, t: f32, interval: f32, expected: &[f32]) {
+        let mut output = vec![0.0; expected.len()];
+        r.sample(rate, t, interval, &mut output);
+        assert_eq!(&output, expected);
+    }
+
     #[test]
     fn fill() {
         let mut r = Ring::new(4);
@@ -109,13 +115,8 @@ mod tests {
         assert_eq!(r.write, 3.0);
         assert_eq!(r.buffer[..], [1.0, 2.0, 3.0, 0.0]);
 
-        let mut out1 = [0.0f32; 2];
-        r.sample(1, -1.5, 1.0, &mut out1);
-        assert_eq!(out1, [2.5, 1.5]);
-
-        let mut out2 = [0.0f32; 4];
-        r.sample(1, -1.5, 0.25, &mut out2);
-        assert_eq!(out2, [2.5, 2.75, 3.0, 2.25]);
+        assert_out(&r, 1, -1.5, 1.0, &[2.5, 1.5]);
+        assert_out(&r, 1, -1.5, 0.25, &[2.5, 2.75, 3.0, 2.25]);
     }
 
     #[test]
@@ -129,8 +130,6 @@ mod tests {
         r.write(&s, 1, 3.0);
         assert_eq!(r.buffer[..], [5.0, 6.0, 3.0, 4.0]);
 
-        let mut out = [0.0f32; 6];
-        r.sample(1, -2.75, 0.5, &mut out);
-        assert_eq!(out, [4.25, 4.75, 5.25, 5.75, 5.25, 3.75]);
+        assert_out(&r, 1, -2.75, 0.5, &[4.25, 4.75, 5.25, 5.75, 5.25, 3.75]);
     }
 }
