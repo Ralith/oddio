@@ -93,6 +93,15 @@ where
         if gain.target() != &shared {
             gain.set(shared);
         }
+        if gain.progress() == 1.0 {
+            let g = gain.get();
+            if g != 1.0 {
+                for x in out {
+                    *x = frame::scale(x, g);
+                }
+            }
+            return;
+        }
         for x in out {
             *x = frame::scale(x, gain.get());
             gain.advance(interval / SMOOTHING_PERIOD);
