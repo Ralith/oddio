@@ -167,9 +167,9 @@ mod tests {
 
     #[test]
     fn smoothing() {
-        let s = Gain::new(Constant(1.0));
+        let mut s = Gain::new(Constant(1.0));
         let mut buf = [0.0; 6];
-        GainControl(&s.shared).set_amplitude_ratio(5.0);
+        s.control::<Gain<_>, _>().set_amplitude_ratio(5.0);
         s.sample(0.025, &mut buf);
         assert_eq!(buf, [1.0, 2.0, 3.0, 4.0, 5.0, 5.0]);
         s.sample(0.025, &mut buf);
