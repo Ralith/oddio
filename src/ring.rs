@@ -63,8 +63,8 @@ impl Ring {
                 (self.buffer[x], self.buffer[0])
             } else {
                 base = 0;
-                offset = (x % self.buffer.len()) as f32 + fract;
-                let x = unsafe { offset.to_int_unchecked::<usize>() };
+                let x = x % self.buffer.len();
+                offset = x as f32 + fract;
                 if x < self.buffer.len() - 1 {
                     (self.buffer[x], self.buffer[x + 1])
                 } else {
