@@ -23,6 +23,9 @@ impl<T: ?Sized> Handle<T> {
 
     /// Get the control for [`Controlled`] signal `S` in a chain of signals
     ///
+    /// Allows a signal to be controlled while playing. Prefer [`Filter::control`] for initial
+    /// configuration.
+    ///
     /// `Index` can usually be inferred.
     ///
     /// # Example
@@ -56,6 +59,29 @@ pub trait Filter {
 
     /// Access the inner signal
     fn inner(&self) -> &Self::Inner;
+
+    /// Get the control for owned [`Controlled`] signal `S` in a chain of signals
+    ///
+    /// Useful for initial configuration of a signal before it's passed on to be played. See
+    /// [`Handle::control`] for live control.
+    ///
+    /// `Index` can usually be inferred.
+    ///
+    /// # Example
+    /// ```
+    /// # use oddio::*;
+    /// fn configure(signal: &mut MonoToStereo<Gain<FramesSignal<Sample>>>) {
+    ///     signal.control::<Gain<_>, _>().set_gain(-3.0);
+    /// }
+    /// ```
+    fn control<'a, S, Index>(&'a mut self) -> S::Control
+    where
+        Self: FilterHaving<S, Index>,
+        S: Controlled<'a>,
+    {
+        let signal: &S = (*self).get();
+        unsafe { S::make_control(signal) }
+    }
 }
 
 /// A [`Signal`] or transformer that can be safely controlled from another thread
