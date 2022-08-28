@@ -79,6 +79,27 @@ impl<T> Gain<T> {
     }
 }
 
+impl<T> Gain<T> {
+    /// Set the initial amplification to `db` decibels
+    ///
+    /// Perceptually linear. Negative values make the signal quieter.
+    ///
+    /// Equivalent to `self.set_amplitude_ratio(10.0f32.powf(db / 20.0))`.
+    pub fn set_gain(&mut self, db: f32) {
+        self.set_amplitude_ratio(10.0f32.powf(db / 20.0));
+    }
+
+    /// Set the initial amplitude scaling of the signal directly
+    ///
+    /// This is nonlinear in terms of both perception and power. Most users should prefer
+    /// `set_gain`. Unlike `set_gain`, this method allows a signal to be completely zeroed out if
+    /// needed, or even have its phase inverted with a negative factor.
+    pub fn set_amplitude_ratio(&mut self, factor: f32) {
+        self.shared.store(factor.to_bits(), Ordering::Relaxed);
+        *self.gain.get_mut() = Smoothed::new(factor);
+    }
+}
+
 impl<T: Signal> Signal for Gain<T>
 where
     T::Frame: Frame,
