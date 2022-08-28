@@ -49,20 +49,17 @@ impl Ring {
             ((t * rate as f32).abs().ceil() as usize) < self.buffer.len(),
             "samples must lie less than a buffer period in the past"
         );
-        let s0 = (self.write + t * rate as f32).rem_euclid(self.buffer.len() as f32);
+        let mut offset = (self.write + t * rate as f32).rem_euclid(self.buffer.len() as f32);
         let ds = interval * rate as f32;
-        let mut base = s0 as usize;
-        let mut offset = s0 - base as f32;
         for o in out.iter_mut() {
             let trunc = unsafe { offset.to_int_unchecked::<usize>() };
             let fract = offset - trunc as f32;
-            let x = base + trunc;
+            let x = trunc;
             let (a, b) = if x < self.buffer.len() - 1 {
                 (self.buffer[x], self.buffer[x + 1])
             } else if x < self.buffer.len() {
                 (self.buffer[x], self.buffer[0])
             } else {
-                base = 0;
                 let x = x % self.buffer.len();
                 offset = x as f32 + fract;
                 if x < self.buffer.len() - 1 {
