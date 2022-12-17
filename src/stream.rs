@@ -86,12 +86,8 @@ impl<T: Frame + Copy> Signal for Stream<T> {
         self.advance(interval * out.len() as f32);
     }
 
-    #[allow(clippy::float_cmp)]
     fn is_finished(&self) -> bool {
-        if !self.closed.get() {
-            return false;
-        }
-        self.t.get() == self.inner.borrow().len() as f32
+        self.closed.get()
     }
 
     fn handle_dropped(&self) {
@@ -116,13 +112,23 @@ where
 }
 
 impl<'a, T> StreamControl<'a, T> {
-    /// Add more samples. Returns the number of samples read.
-    pub fn write(&mut self, samples: &[T]) -> usize
+    /// Add more frames. Returns either the number of frames read if they couldn't all fit inside
+    /// the buffer, or the remaining number of frames that can be written in the buffer.
+    pub fn write(&mut self, samples: &[T]) -> StreamWriteResult
     where
         T: Copy,
     {
-        self.0.send.borrow_mut().send_from_slice(samples)
+        match self.0.send.borrow_mut().send_from_slice(samples) {
+            spsc::SendSliceResult::RemainingSlots(n) => StreamWriteResult::AvailableSpace(n),
+            spsc::SendSliceResult::PushedElements(n) => StreamWriteResult::FramesRead(n),
+        }
     }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub enum StreamWriteResult {
+    FramesRead(usize),
+    AvailableSpace(usize),
 }
 
 #[cfg(test)]
@@ -139,10 +145,19 @@ mod tests {
     #[test]
     fn smoke() {
         let s = Stream::<f32>::new(1, 3);
-        assert_eq!(StreamControl(&s).write(&[1.0, 2.0]), 2);
-        assert_eq!(StreamControl(&s).write(&[3.0, 4.0]), 1);
+        assert_eq!(
+            StreamControl(&s).write(&[1.0, 2.0]),
+            StreamWriteResult::AvailableSpace(1)
+        );
+        assert_eq!(
+            StreamControl(&s).write(&[3.0, 4.0]),
+            StreamWriteResult::FramesRead(1)
+        );
         assert_out(&s, &[1.0, 2.0, 3.0, 0.0, 0.0]);
-        assert_eq!(StreamControl(&s).write(&[5.0, 6.0, 7.0, 8.0]), 3);
+        assert_eq!(
+            StreamControl(&s).write(&[5.0, 6.0, 7.0, 8.0]),
+            StreamWriteResult::FramesRead(3)
+        );
         assert_out(&s, &[5.0]);
         assert_out(&s, &[6.0, 7.0, 0.0, 0.0]);
         assert_out(&s, &[0.0, 0.0]);
@@ -151,7 +166,10 @@ mod tests {
     #[test]
     fn cleanup() {
         let s = Stream::<f32>::new(1, 4);
-        assert_eq!(StreamControl(&s).write(&[1.0, 2.0]), 2);
+        assert_eq!(
+            StreamControl(&s).write(&[1.0, 2.0]),
+            StreamWriteResult::AvailableSpace(2)
+        );
         assert!(!s.is_finished());
         s.handle_dropped();
         assert!(!s.is_finished());

@@ -26,7 +26,7 @@ impl<T> Sender<T> {
     /// Append a prefix of `data` to the channel
     ///
     /// Returns the number of items sent.
-    pub fn send_from_slice(&mut self, data: &[T]) -> usize
+    pub fn send_from_slice(&mut self, data: &[T]) -> SendSliceResult
     where
         T: Copy,
     {
@@ -63,7 +63,12 @@ impl<T> Sender<T> {
                 .header
                 .write
                 .store((write + n) % size, Ordering::Release);
-            n
+
+            if n < data.len() {
+                SendSliceResult::PushedElements(n)
+            } else {
+                SendSliceResult::RemainingSlots(free.0.len() + free.1.len() - n)
+            }
         }
     }
 
@@ -95,6 +100,12 @@ impl<T> Sender<T> {
     pub fn is_closed(&mut self) -> bool {
         Arc::get_mut(&mut self.shared).is_some()
     }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub enum SendSliceResult {
+    RemainingSlots(usize),
+    PushedElements(usize),
 }
 
 pub struct Receiver<T> {
@@ -296,7 +307,10 @@ mod tests {
     #[test]
     fn send_excess() {
         let (mut send, mut recv) = channel::<u32>(4);
-        assert_eq!(send.send_from_slice(&[1, 2, 3, 4, 5]), 4);
+        assert_eq!(
+            send.send_from_slice(&[1, 2, 3, 4, 5]),
+            SendSliceResult::PushedElements(4)
+        );
         recv.update();
         assert_eq!(recv.len(), 4);
         assert_eq!(recv[0], 1);
@@ -308,10 +322,19 @@ mod tests {
     #[test]
     fn fill_release_fill() {
         let (mut send, mut recv) = channel::<u32>(4);
-        assert_eq!(send.send_from_slice(&[1, 2, 3, 4]), 4);
+        assert_eq!(
+            send.send_from_slice(&[1, 2, 3, 4]),
+            SendSliceResult::RemainingSlots(0)
+        );
         recv.update();
         recv.release(2);
-        assert_eq!(send.send_from_slice(&[5, 6, 7]), 2);
-        assert_eq!(send.send_from_slice(&[7]), 0);
+        assert_eq!(
+            send.send_from_slice(&[5, 6, 7]),
+            SendSliceResult::PushedElements(2)
+        );
+        assert_eq!(
+            send.send_from_slice(&[7]),
+            SendSliceResult::PushedElements(0)
+        );
     }
 }
