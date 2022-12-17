@@ -1,7 +1,9 @@
 use core::{
     cell::{Cell, UnsafeCell},
     mem,
+    time::Duration,
 };
+use std::time::Instant;
 
 use crate::{frame, math::Float, Controlled, Filter, Frame, Signal, Swap};
 
@@ -36,11 +38,17 @@ where
     fn sample(&self, interval: f32, mut out: &mut [T::Frame]) {
         let inner = unsafe { &mut *self.inner.get() };
 
-        if self.progress.get() >= 1.0 {
+        if self.progress.get() >= 1.0 || self.progress.get() < 0.0 {
             // A fade must complete before a new one begins
             if self.next.refresh() {
-                self.progress.set(0.0);
-            } else {
+                let time_diff = unsafe { (*self.next.received()).as_mut().unwrap() }
+                    .begin
+                    .map(|i| i.saturating_duration_since(Instant::now()).as_secs_f32())
+                    .unwrap_or(0.0);
+                self.progress.set(-time_diff);
+            }
+
+            if !self.next.refresh() || self.progress.get() < 0.0 {
                 // Fast path
                 inner.sample(interval, out);
                 return;
@@ -112,6 +120,19 @@ impl<'a, T> FaderControl<'a, T> {
             *self.0.pending() = Some(Command {
                 fade_to: signal,
                 duration,
+                begin: None,
+            });
+        }
+        self.0.flush()
+    }
+
+    /// Crossfade to `signal` over `duration`, after `seconds_from_now`.
+    pub fn deferred_fade_to(&mut self, signal: T, duration: f32, seconds_from_now: f32) {
+        unsafe {
+            *self.0.pending() = Some(Command {
+                fade_to: signal,
+                duration,
+                begin: Some(Instant::now() + Duration::from_secs_f32(seconds_from_now)),
             });
         }
         self.0.flush()
@@ -121,6 +142,7 @@ impl<'a, T> FaderControl<'a, T> {
 struct Command<T> {
     fade_to: T,
     duration: f32,
+    begin: Option<Instant>,
 }
 
 #[cfg(test)]
