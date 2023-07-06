@@ -116,7 +116,13 @@ where
 }
 
 impl<'a, T> StreamControl<'a, T> {
-    /// Add more samples. Returns the number of samples read.
+    /// Lower bound to the number of samples that the next `write` call will successfully consume
+    pub fn free(&mut self) -> usize {
+        self.0.send.borrow().free()
+    }
+
+    /// Add more samples. Returns the number of samples consumed. Remaining samples should be passed
+    /// in again in a future call.
     pub fn write(&mut self, samples: &[T]) -> usize
     where
         T: Copy,

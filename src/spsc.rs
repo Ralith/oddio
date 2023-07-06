@@ -71,6 +71,20 @@ impl<T> Sender<T> {
         self.shared.data.len() - 1
     }
 
+    /// Lower bound on the number of items can be sent immediately
+    pub fn free(&self) -> usize {
+        let write = self.shared.header.write.load(Ordering::Relaxed);
+        let read = self.shared.header.read.load(Ordering::Relaxed);
+        let size = self.shared.data.len();
+        if write < read {
+            read - write - 1
+        } else if let Some(max) = read.checked_sub(1) {
+            size - write + max
+        } else {
+            size - write - 1
+        }
+    }
+
     /// Append a single item, leaving at least `reserve_slots` for future use
     pub fn send(&mut self, data: T, reserve_slots: usize) -> Result<(), T> {
         let write = self.shared.header.write.load(Ordering::Relaxed);
@@ -261,7 +275,8 @@ mod tests {
 
     #[test]
     fn recv_empty() {
-        let (_, mut recv) = channel::<u32>(4);
+        let (send, mut recv) = channel::<u32>(4);
+        assert_eq!(send.free(), 4);
         recv.update();
         assert_eq!(recv.len(), 0);
     }
@@ -270,6 +285,7 @@ mod tests {
     fn send_recv() {
         let (mut send, mut recv) = channel::<u32>(4);
         send.send_from_slice(&[1, 2, 3]);
+        assert_eq!(send.free(), 1);
         recv.update();
         assert_eq!(recv.len(), 3);
         assert_eq!(recv[0], 1);
@@ -281,11 +297,14 @@ mod tests {
     fn wrap() {
         let (mut send, mut recv) = channel::<u32>(4);
         send.send_from_slice(&[1, 2, 3]);
+        assert_eq!(send.free(), 1);
         recv.update();
         recv.release(2);
+        assert_eq!(send.free(), 3);
         assert_eq!(recv.len(), 1);
         assert_eq!(recv[0], 3);
         send.send_from_slice(&[4, 5]);
+        assert_eq!(send.free(), 1);
         recv.update();
         assert_eq!(recv.len(), 3);
         assert_eq!(recv[0], 3);
@@ -309,9 +328,13 @@ mod tests {
     fn fill_release_fill() {
         let (mut send, mut recv) = channel::<u32>(4);
         assert_eq!(send.send_from_slice(&[1, 2, 3, 4]), 4);
+        assert_eq!(send.free(), 0);
         recv.update();
         recv.release(2);
+        assert_eq!(send.free(), 2);
         assert_eq!(send.send_from_slice(&[5, 6, 7]), 2);
+        assert_eq!(send.free(), 0);
         assert_eq!(send.send_from_slice(&[7]), 0);
+        assert_eq!(send.free(), 0);
     }
 }
