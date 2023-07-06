@@ -30,11 +30,8 @@ impl<T> Frames<T> {
         let header_layout = alloc::Layout::new::<f64>();
         let (layout, payload_offset) = header_layout
             .extend(
-                alloc::Layout::from_size_align(
-                    mem::size_of::<T>() * samples.len(),
-                    mem::align_of::<T>(),
-                )
-                .unwrap(),
+                alloc::Layout::from_size_align(mem::size_of_val(samples), mem::align_of::<T>())
+                    .unwrap(),
             )
             .unwrap();
         let layout = layout.pad_to_align();

@@ -56,7 +56,7 @@ impl<T> Stream<T> {
         T: Frame + Copy,
     {
         let x0 = s.trunc() as isize;
-        let fract = s.fract() as f32;
+        let fract = s.fract();
         let x1 = x0 + 1;
         let a = self.get(x0);
         let b = self.get(x1);
