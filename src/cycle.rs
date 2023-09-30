@@ -24,7 +24,7 @@ impl<T> Cycle<T> {
 impl<T: Frame + Copy> Signal for Cycle<T> {
     type Frame = T;
 
-    fn sample(&self, interval: f32, out: &mut [T]) {
+    fn sample(&mut self, interval: f32, out: &mut [T]) {
         let ds = interval * self.frames.rate() as f32;
         let mut base = self.cursor.get() as usize;
         let mut offset = (self.cursor.get() - base as f64) as f32;
@@ -55,7 +55,7 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
 }
 
 impl<T: Frame + Copy> Seek for Cycle<T> {
-    fn seek(&self, seconds: f32) {
+    fn seek(&mut self, seconds: f32) {
         let s = (self.cursor.get() + f64::from(seconds) * self.frames.rate() as f64)
             .rem_euclid(self.frames.len() as f64);
         self.cursor.set(s);

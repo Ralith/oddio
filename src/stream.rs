@@ -75,7 +75,7 @@ impl<T> Stream<T> {
 impl<T: Frame + Copy> Signal for Stream<T> {
     type Frame = T;
 
-    fn sample(&self, interval: f32, out: &mut [T]) {
+    fn sample(&mut self, interval: f32, out: &mut [T]) {
         self.inner.borrow_mut().update();
         let s0 = self.t.get();
         let ds = interval * self.rate as f32;
@@ -92,12 +92,6 @@ impl<T: Frame + Copy> Signal for Stream<T> {
             return false;
         }
         self.t.get() == self.inner.borrow().len() as f32
-    }
-
-    fn handle_dropped(&self) {
-        self.closed.set(true);
-        // Make sure a following `is_finished` can see data was sent at the last moment
-        self.inner.borrow_mut().update();
     }
 }
 

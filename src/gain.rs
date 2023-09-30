@@ -31,7 +31,7 @@ where
 {
     type Frame = T::Frame;
 
-    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+    fn sample(&mut self, interval: f32, out: &mut [T::Frame]) {
         self.inner.sample(interval, out);
         for x in out {
             *x = frame::scale(x, self.gain);
@@ -41,18 +41,13 @@ where
     fn is_finished(&self) -> bool {
         self.inner.is_finished()
     }
-
-    #[inline]
-    fn handle_dropped(&self) {
-        self.inner.handle_dropped();
-    }
 }
 
 impl<T: Seek + ?Sized> Seek for FixedGain<T>
 where
     T::Frame: Frame,
 {
-    fn seek(&self, seconds: f32) {
+    fn seek(&mut self, seconds: f32) {
         self.inner.seek(seconds)
     }
 }
@@ -107,7 +102,7 @@ where
     type Frame = T::Frame;
 
     #[allow(clippy::float_cmp)]
-    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+    fn sample(&mut self, interval: f32, out: &mut [T::Frame]) {
         self.inner.sample(interval, out);
         let shared = f32::from_bits(self.shared.load(Ordering::Relaxed));
         let mut gain = self.gain.borrow_mut();
@@ -131,11 +126,6 @@ where
 
     fn is_finished(&self) -> bool {
         self.inner.is_finished()
-    }
-
-    #[inline]
-    fn handle_dropped(&self) {
-        self.inner.handle_dropped();
     }
 }
 

@@ -19,7 +19,7 @@ where
 {
     type Frame = T::Frame;
 
-    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+    fn sample(&mut self, interval: f32, out: &mut [T::Frame]) {
         self.0.sample(interval, out);
         for x in out {
             for channel in x.channels_mut() {
@@ -30,11 +30,6 @@ where
 
     fn is_finished(&self) -> bool {
         self.0.is_finished()
-    }
-
-    #[inline]
-    fn handle_dropped(&self) {
-        self.0.handle_dropped();
     }
 }
 
@@ -50,7 +45,7 @@ where
     T: Signal + Seek,
     T::Frame: Frame,
 {
-    fn seek(&self, seconds: f32) {
+    fn seek(&mut self, seconds: f32) {
         self.0.seek(seconds);
     }
 }

@@ -33,7 +33,7 @@ where
     type Frame = T::Frame;
 
     #[allow(clippy::float_cmp)]
-    fn sample(&self, interval: f32, mut out: &mut [T::Frame]) {
+    fn sample(&mut self, interval: f32, mut out: &mut [T::Frame]) {
         let inner = unsafe { &mut *self.inner.get() };
 
         if self.progress.get() >= 1.0 {
@@ -75,13 +75,6 @@ where
     #[inline]
     fn is_finished(&self) -> bool {
         false
-    }
-
-    #[inline]
-    fn handle_dropped(&self) {
-        unsafe {
-            (*self.inner.get()).handle_dropped();
-        }
     }
 }
 

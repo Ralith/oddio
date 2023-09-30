@@ -60,7 +60,6 @@ mod smooth;
 mod spatial;
 mod speed;
 mod spsc;
-mod stop;
 mod stream;
 mod swap;
 mod tanh;
@@ -82,7 +81,6 @@ pub use sine::*;
 pub use smooth::{Interpolate, Smoothed};
 pub use spatial::*;
 pub use speed::{Speed, SpeedControl};
-pub use stop::*;
 pub use stream::{Stream, StreamControl};
 pub use swap::Swap;
 pub use tanh::Tanh;
@@ -93,41 +91,10 @@ pub type Sample = f32;
 /// Populate `out` with frames from `signal` at `sample_rate`
 ///
 /// Convenience wrapper for [`Signal::sample`].
-pub fn run<S: Signal + ?Sized>(signal: &S, sample_rate: u32, out: &mut [S::Frame]) {
+pub fn run<S: Signal + ?Sized>(signal: &mut S, sample_rate: u32, out: &mut [S::Frame]) {
     let interval = 1.0 / sample_rate as f32;
     signal.sample(interval, out);
 }
-
-/// Split concurrent controls out of a signal
-///
-/// The [`Handle`] can be used to control the signal concurrent with the [`SplitSignal`] being
-/// played
-pub fn split<S: Signal>(signal: S) -> (Handle<S>, SplitSignal<S>) {
-    let signal = alloc::sync::Arc::new(signal);
-    let handle = unsafe { Handle::from_arc(signal.clone()) };
-    (handle, SplitSignal(signal))
-}
-
-/// A concurrently controlled [`Signal`]
-pub struct SplitSignal<S: ?Sized>(alloc::sync::Arc<S>);
-
-impl<S> Signal for SplitSignal<S>
-where
-    S: Signal + ?Sized,
-{
-    type Frame = S::Frame;
-
-    fn sample(&self, interval: f32, out: &mut [Self::Frame]) {
-        self.0.sample(interval, out);
-    }
-
-    fn is_finished(&self) -> bool {
-        self.0.is_finished()
-    }
-}
-
-// Safe due to constraints on [`Controlled`]
-unsafe impl<S: ?Sized> Send for SplitSignal<S> {}
 
 /// Convert a slice of interleaved stereo data into a slice of stereo frames
 ///

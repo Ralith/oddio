@@ -15,7 +15,12 @@ impl Ring {
     }
 
     /// Fill buffer from `signal`
-    pub fn write<S: Signal<Frame = Sample> + ?Sized>(&mut self, signal: &S, rate: u32, dt: f32) {
+    pub fn write<S: Signal<Frame = Sample> + ?Sized>(
+        &mut self,
+        signal: &mut S,
+        rate: u32,
+        dt: f32,
+    ) {
         debug_assert!(
             dt * rate as f32 <= self.buffer.len() as f32,
             "output range exceeds capacity"
