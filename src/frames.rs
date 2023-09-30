@@ -146,19 +146,21 @@ pub struct FramesSignal<T> {
     /// Approximation of t in samples, for reading from the control. We could store t's bits in an
     /// AtomicU64 here, but that would sacrifice portability to platforms that don't have it,
     /// e.g. mips32.
-    sample_t: AtomicIsize,
+    sample_t: Arc<AtomicIsize>,
 }
 
 impl<T> FramesSignal<T> {
     /// Create an audio signal from some samples
     ///
     /// `start_seconds` adjusts the initial playback position, and may be negative.
-    pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> Self {
-        Self {
+    pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> (FramesSignalControl, Self) {
+        let signal = Self {
             t: Cell::new(start_seconds),
-            sample_t: AtomicIsize::new((start_seconds * data.rate) as isize),
+            sample_t: Arc::new(AtomicIsize::new((start_seconds * data.rate) as isize)),
             data,
-        }
+        };
+        let control = FramesSignalControl(signal.sample_t.clone(), signal.data.rate);
+        (control, signal)
     }
 }
 
@@ -207,26 +209,16 @@ impl<T: Frame + Copy> Seek for FramesSignal<T> {
     }
 }
 
-impl<T> Clone for FramesSignal<T> {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-            t: self.t.clone(),
-            sample_t: AtomicIsize::new(self.sample_t.load(Ordering::Relaxed)),
-        }
-    }
-}
-
 impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
     fn from(samples: Arc<Frames<T>>) -> Self {
-        Self::new(samples, 0.0)
+        Self::new(samples, 0.0).1
     }
 }
 
 /// Thread-safe control for a [`FramesSignal`], giving access to current playback location.
-pub struct FramesSignalControl<'a>(&'a AtomicIsize, f64);
+pub struct FramesSignalControl(Arc<AtomicIsize>, f64);
 
-impl<'a> FramesSignalControl<'a> {
+impl FramesSignalControl {
     /// Get the current playback position.
     ///
     /// This number may be negative if the starting time was negative,
@@ -244,7 +236,7 @@ mod tests {
     use super::*;
     use ::alloc::vec;
 
-    fn assert_out(stream: &FramesSignal<f32>, interval: f32, expected: &[f32]) {
+    fn assert_out(stream: &mut FramesSignal<f32>, interval: f32, expected: &[f32]) {
         let mut output = vec![0.0; expected.len()];
         stream.sample(interval, &mut output);
         assert_eq!(&output, expected);
@@ -259,49 +251,35 @@ mod tests {
 
     #[test]
     fn sample() {
-        let signal = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0, 4.0]), -2.0);
+        let (_, mut signal) = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0, 4.0]), -2.0);
 
-        assert_out(&signal, 0.25, &[0.0, 0.0, 0.0, 0.0]);
-        assert_out(&signal, 0.5, &[0.0, 0.5, 1.0]);
-        assert_out(&signal, 1.0, &[1.5, 2.5, 3.5, 2.0, 0.0]);
+        assert_out(&mut signal, 0.25, &[0.0, 0.0, 0.0, 0.0]);
+        assert_out(&mut signal, 0.5, &[0.0, 0.5, 1.0]);
+        assert_out(&mut signal, 1.0, &[1.5, 2.5, 3.5, 2.0, 0.0]);
     }
 
     #[test]
     fn playback_position() {
-        let signal = FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0]), -2.0);
+        let (control, mut signal) =
+            FramesSignal::new(Frames::from_slice(1, &[1.0, 2.0, 3.0]), -2.0);
 
         // negatives are fine
-        let init = FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position();
+        let init = control.playback_position();
         assert_eq!(init, -2.0);
 
         let mut buf = [0.0; 10];
 
         // get back to positive
         signal.sample(0.2, &mut buf);
-        assert_eq!(
-            0.0,
-            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
-        );
+        assert_eq!(0.0, control.playback_position());
 
         signal.sample(0.1, &mut buf);
-        assert_eq!(
-            1.0,
-            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
-        );
+        assert_eq!(1.0, control.playback_position());
         signal.sample(0.1, &mut buf);
-        assert_eq!(
-            2.0,
-            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
-        );
+        assert_eq!(2.0, control.playback_position());
         signal.sample(0.2, &mut buf);
-        assert_eq!(
-            4.0,
-            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
-        );
+        assert_eq!(4.0, control.playback_position());
         signal.sample(0.5, &mut buf);
-        assert_eq!(
-            9.0,
-            FramesSignalControl(&signal.sample_t, signal.data.rate).playback_position()
-        );
+        assert_eq!(9.0, control.playback_position());
     }
 }

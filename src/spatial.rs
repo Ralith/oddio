@@ -1,5 +1,4 @@
-use alloc::boxed::Box;
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use core::{
     cell::{Cell, RefCell},
     ops::{Index, IndexMut},
@@ -13,11 +12,11 @@ use crate::{
     Sample, Seek, Signal,
 };
 
-type ErasedSpatialBuffered = Box<SpatialBuffered<dyn Signal<Frame = Sample> + Send>>;
-type ErasedSpatial = Box<Spatial<dyn Seek<Frame = Sample> + Send>>;
+type ErasedSpatialBuffered = Box<SpatialSignalBuffered<dyn Signal<Frame = Sample> + Send>>;
+type ErasedSpatial = Box<SpatialSignal<dyn Seek<Frame = Sample> + Send>>;
 
 /// An individual buffered spatialized signal
-pub struct SpatialBuffered<T: ?Sized> {
+struct SpatialSignalBuffered<T: ?Sized> {
     rate: u32,
     max_delay: f32,
     common: Common,
@@ -29,7 +28,7 @@ pub struct SpatialBuffered<T: ?Sized> {
     inner: T,
 }
 
-impl<T> SpatialBuffered<T> {
+impl<T> SpatialSignalBuffered<T> {
     fn new(
         rate: u32,
         inner: T,
@@ -54,12 +53,12 @@ impl<T> SpatialBuffered<T> {
 }
 
 /// An individual seekable spatialized signal
-pub struct Spatial<T: ?Sized> {
+struct SpatialSignal<T: ?Sized> {
     common: Common,
     inner: T,
 }
 
-impl<T> Spatial<T> {
+impl<T> SpatialSignal<T> {
     fn new(
         inner: T,
         position: mint::Point3<f32>,
@@ -75,7 +74,7 @@ impl<T> Spatial<T> {
 
 struct Common {
     radius: f32,
-    motion: Swap<Motion>,
+    motion: Arc<Swap<Motion>>,
     state: RefCell<State>,
     /// How long ago the signal finished, if it did
     finished_for: Cell<Option<f32>>,
@@ -86,11 +85,11 @@ impl Common {
     fn new(radius: f32, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
         Self {
             radius,
-            motion: Swap::new(|| Motion {
+            motion: Arc::new(Swap::new(|| Motion {
                 position,
                 velocity,
                 discontinuity: false,
-            }),
+            })),
             state: RefCell::new(State::new(position)),
             finished_for: Cell::new(None),
             stopped: Cell::new(false),
@@ -99,9 +98,9 @@ impl Common {
 }
 
 /// Control for updating the motion of a spatial signal
-pub struct SpatialControl<'a>(&'a Swap<Motion>);
+pub struct Spatial(Arc<Swap<Motion>>);
 
-impl<'a> SpatialControl<'a> {
+impl Spatial {
     /// Update the position and velocity of the signal
     ///
     /// Coordinates should be in world space, translated such that the listener is at the origin,
@@ -132,9 +131,7 @@ impl<'a> SpatialControl<'a> {
 
 /// [`Signal`] for stereo output from a spatial scene
 pub struct SpatialScene {
-    send_buffered: RefCell<SetHandle<ErasedSpatialBuffered>>,
-    send: RefCell<SetHandle<ErasedSpatial>>,
-    rot: Swap<mint::Quaternion<f32>>,
+    rot: Arc<Swap<mint::Quaternion<f32>>>,
     recv_buffered: RefCell<Set<ErasedSpatialBuffered>>,
     recv: RefCell<Set<ErasedSpatial>>,
 }
@@ -143,30 +140,28 @@ impl SpatialScene {
     /// Create a [`Signal`] for spatializing mono signals for stereo output
     ///
     /// Samples its component signals at `rate`.
-    pub fn new() -> Self {
+    pub fn new() -> (SpatialSceneControl, Self) {
         let (seek_handle, seek_set) = set();
         let (buffered_handle, buffered_set) = set();
-        let rot = Swap::new(|| mint::Quaternion {
+        let rot = Arc::new(Swap::new(|| mint::Quaternion {
             s: 1.0,
             v: [0.0; 3].into(),
-        });
-        SpatialScene {
-            send_buffered: RefCell::new(buffered_handle),
-            send: RefCell::new(seek_handle),
+        }));
+        let control = SpatialSceneControl {
+            rot: rot.clone(),
+            seek: seek_handle,
+            buffered: buffered_handle,
+        };
+        let signal = SpatialScene {
             rot,
             recv_buffered: RefCell::new(buffered_set),
             recv: RefCell::new(seek_set),
-        }
+        };
+        (control, signal)
     }
 }
 
 unsafe impl Send for SpatialScene {}
-
-impl Default for SpatialScene {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 fn walk_set<T, U>(
     set: &mut Set<Box<T>>,
@@ -245,9 +240,13 @@ fn walk_set<T, U>(
 }
 
 /// Control for modifying a [`SpatialScene`]
-pub struct SpatialSceneControl<'a>(&'a SpatialScene);
+pub struct SpatialSceneControl {
+    rot: Arc<Swap<mint::Quaternion<f32>>>,
+    seek: SetHandle<ErasedSpatial>,
+    buffered: SetHandle<ErasedSpatialBuffered>,
+}
 
-impl<'a> SpatialSceneControl<'a> {
+impl SpatialSceneControl {
     /// Begin playing `signal`
     ///
     /// Note that `signal` must be single-channel. Signals in a spatial scene are modeled as
@@ -257,22 +256,24 @@ impl<'a> SpatialSceneControl<'a> {
     /// but not rotated, with velocity relative to the listener. Units are meters and meters per
     /// second.
     ///
-    /// Returns a [`Handle`] that can be used to adjust the signal's movement in the future, pause
-    /// or stop it, and access other controls.
+    /// Returns a handle that can be used to adjust the signal's movement in the future, pause or
+    /// stop it, and access other controls.
     ///
     /// The type of signal given determines what additional controls can be used. See the
     /// examples for a detailed guide.
-    pub fn play<S>(&mut self, signal: S, options: SpatialOptions)
+    pub fn play<S>(&mut self, signal: S, options: SpatialOptions) -> Spatial
     where
         S: Seek<Frame = Sample> + Send + 'static,
     {
-        let signal = Box::new(Spatial::new(
+        let signal = Box::new(SpatialSignal::new(
             signal,
             options.position,
             options.velocity,
             options.radius,
         ));
-        self.0.send.borrow_mut().insert(signal);
+        let handle = Spatial(signal.common.motion.clone());
+        self.seek.insert(signal);
+        handle
     }
 
     /// Like [`play`](Self::play), but supports propagation delay for sources which do not implement `Seek` by
@@ -292,10 +293,11 @@ impl<'a> SpatialSceneControl<'a> {
         max_distance: f32,
         rate: u32,
         buffer_duration: f32,
-    ) where
+    ) -> Spatial
+    where
         S: Signal<Frame = Sample> + Send + 'static,
     {
-        let signal = Box::new(SpatialBuffered::new(
+        let signal = Box::new(SpatialSignalBuffered::new(
             rate,
             signal,
             options.position,
@@ -303,7 +305,9 @@ impl<'a> SpatialSceneControl<'a> {
             max_distance / SPEED_OF_SOUND + buffer_duration,
             options.radius,
         ));
-        self.0.send_buffered.borrow_mut().insert(signal);
+        let handle = Spatial(signal.common.motion.clone());
+        self.buffered.insert(signal);
+        handle
     }
 
     /// Set the listener's rotation
@@ -312,9 +316,9 @@ impl<'a> SpatialSceneControl<'a> {
     pub fn set_listener_rotation(&mut self, rotation: mint::Quaternion<f32>) {
         let signal_rotation = invert_quat(&rotation);
         unsafe {
-            *self.0.rot.pending() = signal_rotation;
+            *self.rot.pending() = signal_rotation;
         }
-        self.0.rot.flush();
+        self.rot.flush();
     }
 }
 
@@ -584,7 +588,7 @@ mod tests {
     impl Signal for FinishedSignal {
         type Frame = f32;
 
-        fn sample(&self, _: f32, out: &mut [Self::Frame]) {
+        fn sample(&mut self, _: f32, out: &mut [Self::Frame]) {
             out.fill(0.0);
         }
 
@@ -594,14 +598,14 @@ mod tests {
     }
 
     impl Seek for FinishedSignal {
-        fn seek(&self, _: f32) {}
+        fn seek(&mut self, _: f32) {}
     }
 
     /// Verify that a signal is dropped only after accounting for propagation delay
     #[test]
     fn signal_finished() {
-        let scene = SpatialScene::new();
-        SpatialSceneControl(&scene).play(
+        let (mut control, mut scene) = SpatialScene::new();
+        control.play(
             FinishedSignal,
             SpatialOptions {
                 // Exactly one second of propagation delay

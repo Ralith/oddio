@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::{Frame, Signal};
@@ -6,17 +7,19 @@ use crate::{Frame, Signal};
 ///
 /// Higher/lower speeds will naturally result in higher/lower pitched sound respectively.
 pub struct Speed<T: ?Sized> {
-    speed: AtomicU32,
+    speed: Arc<AtomicU32>,
     inner: T,
 }
 
 impl<T> Speed<T> {
     /// Apply dynamic speed to `signal`
-    pub fn new(signal: T) -> Self {
-        Self {
-            speed: AtomicU32::new(1.0f32.to_bits()),
+    pub fn new(signal: T) -> (SpeedControl, Self) {
+        let signal = Self {
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             inner: signal,
-        }
+        };
+        let control = SpeedControl(signal.speed.clone());
+        (control, signal)
     }
 }
 
@@ -37,9 +40,9 @@ where
 }
 
 /// Thread-safe control for a [`Speed`] filter
-pub struct SpeedControl<'a>(&'a AtomicU32);
+pub struct SpeedControl(Arc<AtomicU32>);
 
-impl<'a> SpeedControl<'a> {
+impl SpeedControl {
     /// Get the current speed
     pub fn speed(&self) -> f32 {
         f32::from_bits(self.0.load(Ordering::Relaxed))

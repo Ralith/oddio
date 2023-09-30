@@ -12,8 +12,8 @@ fn main() {
             (t * 500.0 * 2.0 * core::f32::consts::PI).sin() * 80.0
         }),
     );
-    let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new());
-    scene_handle.control::<oddio::SpatialScene, _>().play(
+    let (mut scene_handle, mut scene) = oddio::SpatialScene::new();
+    scene_handle.play(
         oddio::FramesSignal::from(boop),
         oddio::SpatialOptions {
             position: [-SPEED, 10.0, 0.0].into(),
@@ -32,7 +32,7 @@ fn main() {
 
     for _ in 0..(RATE * DURATION_SECS / BLOCK_SIZE as u32) {
         let mut block = [[0.0; 2]; BLOCK_SIZE];
-        oddio::run(&scene, RATE, &mut block);
+        oddio::run(&mut scene, RATE, &mut block);
         for &frame in &block {
             for &sample in &frame {
                 writer

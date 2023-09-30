@@ -226,9 +226,9 @@ mod tests {
     #[test]
     fn realloc_signals() {
         let (mut remote, mut s) = set();
-        let signal = FramesSignal::from(Frames::from_slice(RATE, &[[0.0; 2]; RATE as usize]));
+        let frames = Frames::from_slice(RATE, &[[0.0; 2]; RATE as usize]);
         for i in 1..=(INITIAL_SIGNALS_CAPACITY + 2) {
-            remote.insert(signal.clone());
+            remote.insert(FramesSignal::from(frames.clone()));
             s.update();
             assert_eq!(unsafe { (*s.0.get()).signals.len() }, i);
         }
@@ -237,9 +237,9 @@ mod tests {
     #[test]
     fn realloc_channel() {
         let (mut remote, mut s) = set();
-        let signal = FramesSignal::from(Frames::from_slice(RATE, &[[0.0; 2]; RATE as usize]));
+        let frames = Frames::from_slice(RATE, &[[0.0; 2]; RATE as usize]);
         for _ in 0..(INITIAL_CHANNEL_CAPACITY + 2) {
-            remote.insert(signal.clone());
+            remote.insert(FramesSignal::from(frames.clone()));
         }
         assert_eq!(remote.sender.capacity(), 1 + 2 * INITIAL_CHANNEL_CAPACITY);
         assert_eq!(unsafe { (*s.0.get()).signals.len() }, 0);

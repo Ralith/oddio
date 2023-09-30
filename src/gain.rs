@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use core::{
     cell::RefCell,
     sync::atomic::{AtomicU32, Ordering},
@@ -58,23 +59,23 @@ where
 /// input amplitude is initially in the range [0, 1] and pass decibels to [`GainControl::set_gain`],
 /// mapping the maximum volume to 0 decibels, and the minimum to e.g. -60.
 pub struct Gain<T: ?Sized> {
-    shared: AtomicU32,
+    shared: Arc<AtomicU32>,
     gain: RefCell<Smoothed<f32>>,
     inner: T,
 }
 
 impl<T> Gain<T> {
     /// Apply dynamic amplification to `signal`
-    pub fn new(signal: T) -> Self {
-        Self {
-            shared: AtomicU32::new(1.0f32.to_bits()),
+    pub fn new(signal: T) -> (GainControl, Self) {
+        let signal = Gain {
+            shared: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             gain: RefCell::new(Smoothed::new(1.0)),
             inner: signal,
-        }
+        };
+        let handle = GainControl(signal.shared.clone());
+        (handle, signal)
     }
-}
 
-impl<T> Gain<T> {
     /// Set the initial amplification to `db` decibels
     ///
     /// Perceptually linear. Negative values make the signal quieter.
@@ -130,9 +131,9 @@ where
 }
 
 /// Thread-safe control for a [`Gain`] filter
-pub struct GainControl<'a>(&'a AtomicU32);
+pub struct GainControl(Arc<AtomicU32>);
 
-impl<'a> GainControl<'a> {
+impl GainControl {
     /// Get the current amplification in decibels
     pub fn gain(&self) -> f32 {
         20.0 * self.amplitude_ratio().log10()
@@ -172,9 +173,9 @@ mod tests {
 
     #[test]
     fn smoothing() {
-        let mut s = Gain::new(Constant(1.0));
+        let (mut c, mut s) = Gain::new(Constant(1.0));
         let mut buf = [0.0; 6];
-        s.control::<Gain<_>, _>().set_amplitude_ratio(5.0);
+        c.set_amplitude_ratio(5.0);
         s.sample(0.025, &mut buf);
         assert_eq!(buf, [1.0, 2.0, 3.0, 4.0, 5.0, 5.0]);
         s.sample(0.025, &mut buf);

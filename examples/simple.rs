@@ -20,7 +20,7 @@ fn main() {
     // Create the root mixer, and divide it into two parts: a handle that we can use to add new
     // signals to play, and an object we can pass to `oddio::run` in cpal's callback to generate
     // output frames.
-    let (mut mixer_handle, mixer) = oddio::split(oddio::Mixer::new());
+    let (mut mixer_handle, mut mixer) = oddio::Mixer::new();
 
     // Start cpal, taking care not to drop its stream early
     let stream = device
@@ -28,7 +28,7 @@ fn main() {
             &config,
             move |out_flat: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let out_stereo: &mut [[f32; 2]] = oddio::frame_stereo(out_flat);
-                oddio::run(&mixer, sample_rate.0, out_stereo);
+                oddio::run(&mut mixer, sample_rate.0, out_stereo);
             },
             move |err| {
                 eprintln!("{}", err);
@@ -39,9 +39,7 @@ fn main() {
 
     // Start a 200Hz sine wave. We can do this as many times as we like, whenever we like, with
     // different types of signals as needed.
-    mixer_handle
-        .control::<oddio::Mixer<_>, _>()
-        .play(oddio::MonoToStereo::new(oddio::Sine::new(0.0, 400.0)));
+    mixer_handle.play(oddio::MonoToStereo::new(oddio::Sine::new(0.0, 400.0)));
 
     // Wait a bit before exiting
     thread::sleep(Duration::from_secs(3));
