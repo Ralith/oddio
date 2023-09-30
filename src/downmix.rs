@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let signal = Downmix::new(Constant::new([1.0, 2.0]));
+        let mut signal = Downmix::new(Constant::new([1.0, 2.0]));
         let mut out = [0.0; 384];
         signal.sample(1.0, &mut out);
         assert_eq!(out, [3.0; 384]);

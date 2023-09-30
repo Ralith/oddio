@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use core::{
     cell::{Cell, UnsafeCell},
     mem,
@@ -12,17 +13,19 @@ use crate::{frame, math::Float, Frame, Signal, Swap};
 pub struct Fader<T> {
     progress: Cell<f32>,
     inner: UnsafeCell<T>,
-    next: Swap<Option<Command<T>>>,
+    next: Arc<Swap<Option<Command<T>>>>,
 }
 
 impl<T> Fader<T> {
     /// Create a fader initially wrapping `inner`
-    pub fn new(inner: T) -> Self {
-        Self {
+    pub fn new(inner: T) -> (FaderControl<T>, Self) {
+        let signal = Self {
             progress: Cell::new(1.0),
             inner: UnsafeCell::new(inner),
-            next: Swap::new(|| None),
-        }
+            next: Arc::new(Swap::new(|| None)),
+        };
+        let control = FaderControl(signal.next.clone());
+        (control, signal)
     }
 }
 
@@ -79,9 +82,9 @@ where
 }
 
 /// Thread-safe control for a [`Fader`] filter
-pub struct FaderControl<'a, T>(&'a Swap<Option<Command<T>>>);
+pub struct FaderControl<T>(Arc<Swap<Option<Command<T>>>>);
 
-impl<'a, T> FaderControl<'a, T> {
+impl<T> FaderControl<T> {
     /// Crossfade to `signal` over `duration`. If a fade is already in progress, it will complete
     /// before a fading to the new signal begins. If another signal is already waiting for a current
     /// fade to complete, the waiting signal is replaced.
@@ -109,11 +112,11 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let s = Fader::new(Constant(1.0));
+        let (mut c, mut s) = Fader::new(Constant(1.0));
         let mut buf = [42.0; 12];
         s.sample(0.1, &mut buf);
         assert_eq!(buf, [1.0; 12]);
-        FaderControl(&s.next).fade_to(Constant(0.0), 1.0);
+        c.fade_to(Constant(0.0), 1.0);
         s.sample(0.1, &mut buf);
         assert_eq!(buf[0], 1.0);
         assert_eq!(buf[11], 0.0);

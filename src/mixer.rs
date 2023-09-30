@@ -1,12 +1,15 @@
 use alloc::{boxed::Box, sync::Arc, vec};
-use core::cell::RefCell;
+use core::{
+    cell::RefCell,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use crate::{frame, set, Frame, Set, SetHandle, Signal};
 
 /// Handle for controlling a [`Mixer`] from another thread
-pub struct MixerControl<'a, T>(&'a Mixer<T>);
+pub struct MixerControl<T>(SetHandle<ErasedSignal<T>>);
 
-impl<T> MixerControl<'_, T> {
+impl<T> MixerControl<T> {
     /// Begin playing `signal`, returning a handle that can be used to pause or stop it and access
     /// other controls
     ///
@@ -15,17 +18,43 @@ impl<T> MixerControl<'_, T> {
     ///
     /// The type of signal given determines what additional controls can be used. See the
     /// examples for a detailed guide.
-    pub fn play<S>(&mut self, signal: S)
+    pub fn play<S>(&mut self, signal: S) -> Mixed
     where
         S: Signal<Frame = T> + Send + 'static,
     {
-        self.0.send.borrow_mut().insert(Box::new(signal));
+        let signal = Box::new(MixedSignal::new(signal));
+        let control = Mixed(signal.stop.clone());
+        self.0.insert(signal);
+        control
+    }
+}
+
+/// Handle to a signal playing in a [`Mixer`]
+pub struct Mixed(Arc<AtomicBool>);
+
+impl Mixed {
+    /// Immediately halt playback of the associated signal by its [`Mixer`]
+    pub fn stop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+struct MixedSignal<T: ?Sized> {
+    stop: Arc<AtomicBool>,
+    inner: T,
+}
+
+impl<T> MixedSignal<T> {
+    fn new(signal: T) -> Self {
+        Self {
+            stop: Arc::new(AtomicBool::new(false)),
+            inner: signal,
+        }
     }
 }
 
 /// A [`Signal`] that mixes a dynamic set of [`Signal`]s
 pub struct Mixer<T> {
-    send: RefCell<SetHandle<ErasedSignal<T>>>,
     recv: RefCell<Inner<T>>,
 }
 
@@ -34,24 +63,17 @@ where
     T: Frame + Clone,
 {
     /// Construct a new mixer
-    pub fn new() -> Self {
+    pub fn new() -> (MixerControl<T>, Self) {
         let (handle, set) = set();
-        Self {
-            send: RefCell::new(handle),
-            recv: RefCell::new(Inner {
-                set,
-                buffer: vec![T::ZERO; 1024].into(),
-            }),
-        }
-    }
-}
-
-impl<T> Default for Mixer<T>
-where
-    T: Frame + Clone,
-{
-    fn default() -> Self {
-        Self::new()
+        (
+            MixerControl(handle),
+            Self {
+                recv: RefCell::new(Inner {
+                    set,
+                    buffer: vec![T::ZERO; 1024].into(),
+                }),
+            },
+        )
     }
 }
 
@@ -73,7 +95,7 @@ impl<T: Frame> Signal for Mixer<T> {
 
         for i in (0..this.set.len()).rev() {
             let signal = &mut this.set[i];
-            if signal.is_finished() {
+            if signal.stop.load(Ordering::Relaxed) || signal.inner.is_finished() {
                 this.set.remove(i);
                 continue;
             }
@@ -83,7 +105,7 @@ impl<T: Frame> Signal for Mixer<T> {
             while iter.len() > 0 {
                 let n = iter.len().min(this.buffer.len());
                 let staging = &mut this.buffer[..n];
-                signal.sample(interval, staging);
+                signal.inner.sample(interval, staging);
                 for (staged, o) in staging.iter().zip(&mut iter) {
                     *o = frame::mix(o, staged);
                 }
@@ -92,4 +114,4 @@ impl<T: Frame> Signal for Mixer<T> {
     }
 }
 
-type ErasedSignal<T> = Box<dyn Signal<Frame = T>>;
+type ErasedSignal<T> = Box<MixedSignal<dyn Signal<Frame = T>>>;

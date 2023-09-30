@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn wrap_single() {
-        let s = Cycle::new(Frames::from_slice(1, FRAMES));
+        let mut s = Cycle::new(Frames::from_slice(1, FRAMES));
         let mut buf = [0.0; 5];
         s.sample(1.0, &mut buf);
         assert_eq!(buf, [1.0, 2.0, 3.0, 1.0, 2.0]);
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn wrap_multi() {
-        let s = Cycle::new(Frames::from_slice(1, FRAMES));
+        let mut s = Cycle::new(Frames::from_slice(1, FRAMES));
         let mut buf = [0.0; 5];
         s.sample(1.0, &mut buf[..2]);
         s.sample(1.0, &mut buf[2..]);
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn wrap_fract() {
-        let s = Cycle::new(Frames::from_slice(1, FRAMES));
+        let mut s = Cycle::new(Frames::from_slice(1, FRAMES));
         let mut buf = [0.0; 8];
         s.sample(0.5, &mut buf[..2]);
         s.sample(0.5, &mut buf[2..]);
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn wrap_fract_offset() {
-        let s = Cycle::new(Frames::from_slice(1, FRAMES));
+        let mut s = Cycle::new(Frames::from_slice(1, FRAMES));
         s.seek(0.25);
         let mut buf = [0.0; 7];
         s.sample(0.5, &mut buf[..2]);
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn wrap_single_frame() {
-        let s = Cycle::new(Frames::from_slice(1, &[1.0]));
+        let mut s = Cycle::new(Frames::from_slice(1, &[1.0]));
         s.seek(0.25);
         let mut buf = [0.0; 3];
         s.sample(1.0, &mut buf[..2]);
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn wrap_large_interval() {
-        let s = Cycle::new(Frames::from_slice(1, FRAMES));
+        let mut s = Cycle::new(Frames::from_slice(1, FRAMES));
         let mut buf = [0.0; 3];
         s.sample(10.0, &mut buf[..2]);
         s.sample(10.0, &mut buf[2..]);

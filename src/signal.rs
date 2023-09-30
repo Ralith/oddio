@@ -5,8 +5,8 @@ use crate::{flatten_stereo, Sample};
 /// This interface is intended for use only from the code actually generating an audio signal for
 /// output. For example, in a real-time application, `Signal`s will typically be owned by the
 /// real-time audio thread and not directly accessible from elsewhere. Access to an active signal
-/// for other purposes (e.g. to adjust parameters) is generally through [`Handle`](crate::Handle),
-/// using signal-specific interfaces that implement wait-free inter-thread communication.
+/// for other purposes (e.g. to adjust parameters) is generally through a control handle returned by
+/// its constructor.
 ///
 /// To ensure glitch-free audio, none of these methods should perform any operation that may
 /// wait. This includes locks, memory allocation or freeing, and even unbounded compare-and-swap
@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn mono_to_stereo() {
-        let signal = MonoToStereo::new(CountingSignal(Cell::new(0)));
+        let mut signal = MonoToStereo::new(CountingSignal(Cell::new(0)));
         let mut buf = [[0.0; 2]; 4];
         signal.sample(1.0, (&mut buf[..]).into());
         assert_eq!(buf, [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]);

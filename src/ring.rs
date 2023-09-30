@@ -89,7 +89,7 @@ mod tests {
 
     impl Signal for TimeSignal {
         type Frame = Sample;
-        fn sample(&self, interval: f32, out: &mut [Sample]) {
+        fn sample(&mut self, interval: f32, out: &mut [Sample]) {
             for x in out {
                 let t = self.0.get();
                 *x = t as f32;
@@ -98,7 +98,7 @@ mod tests {
         }
     }
 
-    fn assert_out(r: &Ring, rate: u32, t: f32, interval: f32, expected: &[f32]) {
+    fn assert_out(r: &mut Ring, rate: u32, t: f32, interval: f32, expected: &[f32]) {
         let mut output = vec![0.0; expected.len()];
         r.sample(rate, t, interval, &mut output);
         assert_eq!(&output, expected);
@@ -107,31 +107,31 @@ mod tests {
     #[test]
     fn fill() {
         let mut r = Ring::new(4);
-        let s = TimeSignal(Cell::new(1.0));
+        let mut s = TimeSignal(Cell::new(1.0));
 
-        r.write(&s, 1, 1.0);
+        r.write(&mut s, 1, 1.0);
         assert_eq!(r.write, 1.0);
         assert_eq!(r.buffer[..], [1.0, 0.0, 0.0, 0.0]);
 
-        r.write(&s, 1, 2.0);
+        r.write(&mut s, 1, 2.0);
         assert_eq!(r.write, 3.0);
         assert_eq!(r.buffer[..], [1.0, 2.0, 3.0, 0.0]);
 
-        assert_out(&r, 1, -1.5, 1.0, &[2.5, 1.5]);
-        assert_out(&r, 1, -1.5, 0.25, &[2.5, 2.75, 3.0, 2.25]);
+        assert_out(&mut r, 1, -1.5, 1.0, &[2.5, 1.5]);
+        assert_out(&mut r, 1, -1.5, 0.25, &[2.5, 2.75, 3.0, 2.25]);
     }
 
     #[test]
     fn wrap() {
         let mut r = Ring::new(4);
-        let s = TimeSignal(Cell::new(1.0));
+        let mut s = TimeSignal(Cell::new(1.0));
 
-        r.write(&s, 1, 3.0);
+        r.write(&mut s, 1, 3.0);
         assert_eq!(r.buffer[..], [1.0, 2.0, 3.0, 0.0]);
 
-        r.write(&s, 1, 3.0);
+        r.write(&mut s, 1, 3.0);
         assert_eq!(r.buffer[..], [5.0, 6.0, 3.0, 4.0]);
 
-        assert_out(&r, 1, -2.75, 0.5, &[4.25, 4.75, 5.25, 5.75, 5.25, 3.75]);
+        assert_out(&mut r, 1, -2.75, 0.5, &[4.25, 4.75, 5.25, 5.75, 5.25, 3.75]);
     }
 }

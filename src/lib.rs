@@ -1,13 +1,13 @@
 //! Lightweight game audio
 //!
 //! ```no_run
-//! let (mut scene_handle, scene) = oddio::split(oddio::SpatialScene::new());
+//! let (mut scene_handle, mut scene) = oddio::SpatialScene::new();
 //!
 //! // In audio callback:
 //! # let data = &mut [][..];
 //! # let output_sample_rate = 44100;
 //! let out_frames = oddio::frame_stereo(data);
-//! oddio::run(&scene, output_sample_rate, out_frames);
+//! oddio::run(&mut scene, output_sample_rate, out_frames);
 //!
 //! // In game logic:
 //! # let frames = [];
@@ -15,11 +15,11 @@
 //! # let position = [0.0, 0.0, 0.0].into();
 //! # let velocity = [0.0, 0.0, 0.0].into();
 //! let frames = oddio::FramesSignal::from(oddio::Frames::from_slice(sample_rate, &frames));
-//! let mut handle = scene_handle.control::<oddio::SpatialScene, _>()
+//! let mut handle = scene_handle
 //!     .play(frames, oddio::SpatialOptions { position, velocity, ..Default::default() });
 //!
 //! // When position/velocity changes:
-//! handle.control::<oddio::Spatial<_>, _>().set_motion(position, velocity, false);
+//! handle.set_motion(position, velocity, false);
 //! ```
 //!
 //! To get started, review [the `examples`
@@ -29,7 +29,6 @@
 //! - [`Frames`] stores static audio data, which can be played with a [`FramesSignal`]
 //! - [`Mixer`] allows multiple signals to be played concurrently and controlled during playback
 //! - [`SpatialScene`] is a mixer that spatializes its signals
-//! - [`Handle`] allows control of a signal while it's playing, from a mixer or [`split`]
 //! - [`run`] writes frames from a [`Signal`] into an output buffer
 
 #![allow(unused_imports)]

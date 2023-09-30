@@ -45,7 +45,7 @@ fn main() {
     let samples_stereo = oddio::frame_stereo(&mut samples);
     let sound_frames = oddio::Frames::from_slice(source_sample_rate, samples_stereo);
 
-    let (mut mixer_handle, mixer) = oddio::split(oddio::Mixer::new());
+    let (mut mixer_handle, mut mixer) = oddio::Mixer::new();
 
     let config = cpal::StreamConfig {
         channels: 2,
@@ -58,7 +58,7 @@ fn main() {
             &config,
             move |out_flat: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let out_stereo = oddio::frame_stereo(out_flat);
-                oddio::run(&mixer, device_sample_rate, out_stereo);
+                oddio::run(&mut mixer, device_sample_rate, out_stereo);
             },
             move |err| {
                 eprintln!("{}", err);
@@ -67,9 +67,7 @@ fn main() {
         .unwrap();
     stream.play().unwrap();
 
-    mixer_handle
-        .control::<oddio::Mixer<_>, _>()
-        .play(oddio::FramesSignal::from(sound_frames));
+    mixer_handle.play(oddio::FramesSignal::from(sound_frames));
 
     thread::sleep(Duration::from_secs_f32(length_seconds));
 }
