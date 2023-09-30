@@ -144,10 +144,8 @@ impl<T> Receiver<T> {
     }
 
     /// Whether the sender has been dropped
-    // Could be `&self` since we don't allow new references to be created, but :effort:
-    #[allow(clippy::wrong_self_convention)]
-    pub fn is_closed(&mut self) -> bool {
-        Arc::get_mut(&mut self.shared).is_some()
+    pub fn is_closed(&self) -> bool {
+        Arc::strong_count(&self.shared) == 1
     }
 
     pub fn pop(&mut self) -> Option<T> {
