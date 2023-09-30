@@ -10,7 +10,7 @@ use crate::{
     ring::Ring,
     set::{set, Set, SetHandle},
     swap::Swap,
-    Controlled, Filter, FilterHaving, Handle, Sample, Seek, Signal,
+    Sample, Seek, Signal,
 };
 
 type ErasedSpatialBuffered = Box<SpatialBuffered<dyn Signal<Frame = Sample> + Send>>;
@@ -53,21 +53,6 @@ impl<T> SpatialBuffered<T> {
     }
 }
 
-impl<T: ?Sized> Filter for SpatialBuffered<T> {
-    type Inner = T;
-    fn inner(&self) -> &T {
-        &self.inner
-    }
-}
-
-unsafe impl<'a, T: 'a> Controlled<'a> for SpatialBuffered<T> {
-    type Control = SpatialControl<'a>;
-
-    unsafe fn make_control(signal: &'a SpatialBuffered<T>) -> Self::Control {
-        SpatialControl(&signal.common.motion)
-    }
-}
-
 /// An individual seekable spatialized signal
 pub struct Spatial<T: ?Sized> {
     common: Common,
@@ -85,21 +70,6 @@ impl<T> Spatial<T> {
             common: Common::new(radius, position, velocity),
             inner,
         }
-    }
-}
-
-impl<T: ?Sized> Filter for Spatial<T> {
-    type Inner = T;
-    fn inner(&self) -> &T {
-        &self.inner
-    }
-}
-
-unsafe impl<'a, T: 'a> Controlled<'a> for Spatial<T> {
-    type Control = SpatialControl<'a>;
-
-    unsafe fn make_control(signal: &'a Spatial<T>) -> Self::Control {
-        SpatialControl(&signal.common.motion)
     }
 }
 
@@ -276,14 +246,6 @@ fn walk_set<T, U>(
 
 /// Control for modifying a [`SpatialScene`]
 pub struct SpatialSceneControl<'a>(&'a SpatialScene);
-
-unsafe impl<'a> Controlled<'a> for SpatialScene {
-    type Control = SpatialSceneControl<'a>;
-
-    unsafe fn make_control(signal: &'a SpatialScene) -> Self::Control {
-        SpatialSceneControl(signal)
-    }
-}
 
 impl<'a> SpatialSceneControl<'a> {
     /// Begin playing `signal`

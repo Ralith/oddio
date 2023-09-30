@@ -1,6 +1,6 @@
 use core::cell::Cell;
 
-use crate::{math::Float, Filter, Frame, Signal};
+use crate::{math::Float, Frame, Signal};
 
 /// Smoothly adjusts gain over time to keep average (RMS) signal level within a target range
 ///
@@ -91,13 +91,6 @@ where
 
     fn is_finished(&self) -> bool {
         self.inner.is_finished()
-    }
-}
-
-impl<T> Filter for Adapt<T> {
-    type Inner = T;
-    fn inner(&self) -> &T {
-        &self.inner
     }
 }
 

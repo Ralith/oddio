@@ -3,7 +3,7 @@ use core::{
     mem,
 };
 
-use crate::{frame, math::Float, Controlled, Filter, Frame, Signal, Swap};
+use crate::{frame, math::Float, Frame, Signal, Swap};
 
 /// Cross-fades smoothly between dynamically-supplied signals
 ///
@@ -78,23 +78,8 @@ where
     }
 }
 
-impl<T> Filter for Fader<T> {
-    type Inner = T;
-    fn inner(&self) -> &T {
-        unsafe { &*self.inner.get() }
-    }
-}
-
 /// Thread-safe control for a [`Fader`] filter
 pub struct FaderControl<'a, T>(&'a Swap<Option<Command<T>>>);
-
-unsafe impl<'a, T: 'a> Controlled<'a> for Fader<T> {
-    type Control = FaderControl<'a, T>;
-
-    unsafe fn make_control(signal: &'a Fader<T>) -> Self::Control {
-        FaderControl(&signal.next)
-    }
-}
 
 impl<'a, T> FaderControl<'a, T> {
     /// Crossfade to `signal` over `duration`. If a fade is already in progress, it will complete

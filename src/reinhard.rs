@@ -1,4 +1,4 @@
-use crate::{math::Float, Filter, Frame, Seek, Signal};
+use crate::{math::Float, Frame, Seek, Signal};
 
 /// Smoothly maps a signal of any range into (-1, 1)
 ///
@@ -36,13 +36,6 @@ where
 
     fn is_finished(&self) -> bool {
         self.0.is_finished()
-    }
-}
-
-impl<T> Filter for Reinhard<T> {
-    type Inner = T;
-    fn inner(&self) -> &T {
-        &self.0
     }
 }
 

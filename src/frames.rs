@@ -7,7 +7,7 @@ use core::{
     sync::atomic::{AtomicIsize, Ordering},
 };
 
-use crate::{frame, math::Float, Controlled, Frame, Seek, Signal};
+use crate::{frame, math::Float, Frame, Seek, Signal};
 
 /// A sequence of static audio frames at a particular sample rate
 ///
@@ -225,14 +225,6 @@ impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
 
 /// Thread-safe control for a [`FramesSignal`], giving access to current playback location.
 pub struct FramesSignalControl<'a>(&'a AtomicIsize, f64);
-
-unsafe impl<'a, T: 'a> Controlled<'a> for FramesSignal<T> {
-    type Control = FramesSignalControl<'a>;
-
-    unsafe fn make_control(signal: &'a FramesSignal<T>) -> Self::Control {
-        FramesSignalControl(&signal.sample_t, signal.data.rate)
-    }
-}
 
 impl<'a> FramesSignalControl<'a> {
     /// Get the current playback position.

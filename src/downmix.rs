@@ -1,4 +1,4 @@
-use crate::{Filter, Frame, Sample, Signal};
+use crate::{Frame, Sample, Signal};
 
 /// Sums all channels together
 ///
@@ -34,14 +34,6 @@ where
 
     fn is_finished(&self) -> bool {
         self.0.is_finished()
-    }
-}
-
-impl<T: ?Sized> Filter for Downmix<T> {
-    type Inner = T;
-
-    fn inner(&self) -> &Self::Inner {
-        &self.0
     }
 }
 
