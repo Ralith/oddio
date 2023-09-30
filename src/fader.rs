@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use core::mem;
 
-use crate::{frame, math::Float, Frame, Signal, Swap};
+use crate::{frame, math::Float, swap, Frame, Signal};
 
 /// Cross-fades smoothly between dynamically-supplied signals
 ///
@@ -9,19 +9,20 @@ use crate::{frame, math::Float, Frame, Signal, Swap};
 /// perceived loudness
 pub struct Fader<T> {
     progress: f32,
-    next: Arc<Swap<Option<Command<T>>>>,
+    next: swap::Receiver<Option<Command<T>>>,
     inner: T,
 }
 
-impl<T> Fader<T> {
+impl<T: Send> Fader<T> {
     /// Create a fader initially wrapping `inner`
     pub fn new(inner: T) -> (FaderControl<T>, Self) {
+        let (send, recv) = swap::swap(|| None);
         let signal = Self {
             progress: 1.0,
-            next: Arc::new(Swap::new(|| None)),
+            next: recv,
             inner,
         };
-        let control = FaderControl(signal.next.clone());
+        let control = FaderControl(send);
         (control, signal)
     }
 }
@@ -45,7 +46,7 @@ where
             }
         }
 
-        let next = unsafe { (*self.next.received()).as_mut().unwrap() };
+        let next = (*self.next.received()).as_mut().unwrap();
         let increment = interval / next.duration;
         while !out.is_empty() {
             let mut buffer = [(); 1024].map(|()| T::Frame::ZERO);
@@ -76,19 +77,17 @@ where
 }
 
 /// Thread-safe control for a [`Fader`] filter
-pub struct FaderControl<T>(Arc<Swap<Option<Command<T>>>>);
+pub struct FaderControl<T>(swap::Sender<Option<Command<T>>>);
 
 impl<T> FaderControl<T> {
     /// Crossfade to `signal` over `duration`. If a fade is already in progress, it will complete
     /// before a fading to the new signal begins. If another signal is already waiting for a current
     /// fade to complete, the waiting signal is replaced.
     pub fn fade_to(&mut self, signal: T, duration: f32) {
-        unsafe {
-            *self.0.pending() = Some(Command {
-                fade_to: signal,
-                duration,
-            });
-        }
+        *self.0.pending() = Some(Command {
+            fade_to: signal,
+            duration,
+        });
         self.0.flush()
     }
 }

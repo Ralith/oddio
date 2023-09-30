@@ -79,7 +79,6 @@ pub use smooth::{Interpolate, Smoothed};
 pub use spatial::*;
 pub use speed::{Speed, SpeedControl};
 pub use stream::{Stream, StreamControl};
-pub use swap::Swap;
 pub use tanh::Tanh;
 
 /// Unitless instantaneous sound wave amplitude measurement
