@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use crate::{frame, math::Float, Controlled, Filter, Frame, Seek, Signal, Smoothed};
+use crate::{frame, math::Float, Frame, Seek, Signal, Smoothed};
 
 /// Amplifies a signal by a constant amount
 ///
@@ -129,23 +129,8 @@ where
     }
 }
 
-impl<T> Filter for Gain<T> {
-    type Inner = T;
-    fn inner(&self) -> &T {
-        &self.inner
-    }
-}
-
 /// Thread-safe control for a [`Gain`] filter
 pub struct GainControl<'a>(&'a AtomicU32);
-
-unsafe impl<'a, T: 'a> Controlled<'a> for Gain<T> {
-    type Control = GainControl<'a>;
-
-    unsafe fn make_control(signal: &'a Gain<T>) -> Self::Control {
-        GainControl(&signal.shared)
-    }
-}
 
 impl<'a> GainControl<'a> {
     /// Get the current amplification in decibels

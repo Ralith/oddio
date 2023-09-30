@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{Controlled, Filter, Frame, Signal};
+use crate::{Frame, Signal};
 
 /// Scales rate of playback by a dynamically-adjustable factor
 ///
@@ -36,23 +36,8 @@ where
     }
 }
 
-impl<T> Filter for Speed<T> {
-    type Inner = T;
-    fn inner(&self) -> &T {
-        &self.inner
-    }
-}
-
 /// Thread-safe control for a [`Speed`] filter
 pub struct SpeedControl<'a>(&'a AtomicU32);
-
-unsafe impl<'a, T: 'a> Controlled<'a> for Speed<T> {
-    type Control = SpeedControl<'a>;
-
-    unsafe fn make_control(signal: &'a Speed<T>) -> Self::Control {
-        SpeedControl(&signal.speed)
-    }
-}
 
 impl<'a> SpeedControl<'a> {
     /// Get the current speed

@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, sync::Arc, vec};
 use core::cell::RefCell;
 
-use crate::{frame, set, Controlled, Frame, Handle, Set, SetHandle, Signal};
+use crate::{frame, set, Frame, Set, SetHandle, Signal};
 
 /// Handle for controlling a [`Mixer`] from another thread
 pub struct MixerControl<'a, T>(&'a Mixer<T>);
@@ -52,14 +52,6 @@ where
 {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-unsafe impl<'a, T: 'a> Controlled<'a> for Mixer<T> {
-    type Control = MixerControl<'a, T>;
-
-    unsafe fn make_control(signal: &'a Mixer<T>) -> Self::Control {
-        MixerControl(signal)
     }
 }
 

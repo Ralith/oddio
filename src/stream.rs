@@ -2,7 +2,7 @@
 
 use core::cell::{Cell, RefCell};
 
-use crate::{frame, math::Float, spsc, Controlled, Frame, Signal};
+use crate::{frame, math::Float, spsc, Frame, Signal};
 
 /// Dynamic audio from an external source
 pub struct Stream<T> {
@@ -97,17 +97,6 @@ impl<T: Frame + Copy> Signal for Stream<T> {
 
 /// Thread-safe control for a [`Stream`]
 pub struct StreamControl<'a, T>(&'a Stream<T>);
-
-unsafe impl<'a, T> Controlled<'a> for Stream<T>
-where
-    T: 'static,
-{
-    type Control = StreamControl<'a, T>;
-
-    unsafe fn make_control(signal: &'a Stream<T>) -> Self::Control {
-        StreamControl(signal)
-    }
-}
 
 impl<'a, T> StreamControl<'a, T> {
     /// Lower bound to the number of samples that the next `write` call will successfully consume

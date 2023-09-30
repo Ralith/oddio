@@ -1,4 +1,4 @@
-use crate::{flatten_stereo, Filter, Sample};
+use crate::{flatten_stereo, Sample};
 
 /// An audio signal
 ///
@@ -81,14 +81,6 @@ impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
 
     fn is_finished(&self) -> bool {
         self.0.is_finished()
-    }
-}
-
-impl<T: ?Sized> Filter for MonoToStereo<T> {
-    type Inner = T;
-
-    fn inner(&self) -> &Self::Inner {
-        &self.0
     }
 }
 
