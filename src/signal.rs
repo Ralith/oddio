@@ -16,7 +16,7 @@ pub trait Signal {
     type Frame;
 
     /// Sample frames separated by `interval` seconds each
-    fn sample(&self, interval: f32, out: &mut [Self::Frame]);
+    fn sample(&mut self, interval: f32, out: &mut [Self::Frame]);
 
     /// Whether future calls to `sample` with a nonnegative `interval` will only produce zeroes
     ///
@@ -25,30 +25,18 @@ pub trait Signal {
     fn is_finished(&self) -> bool {
         false
     }
-
-    /// Called when the signal's handle is dropped
-    ///
-    /// Useful for e.g. allowing [`Stream`](crate::Stream) to clean itself up when no more data can
-    /// be supplied
-    #[inline]
-    fn handle_dropped(&self) {}
 }
 
 impl<T: Signal + ?Sized> Signal for alloc::boxed::Box<T> {
     type Frame = T::Frame;
 
-    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+    fn sample(&mut self, interval: f32, out: &mut [T::Frame]) {
         (**self).sample(interval, out);
     }
 
     #[inline]
     fn is_finished(&self) -> bool {
         (**self).is_finished()
-    }
-
-    #[inline]
-    fn handle_dropped(&self) {
-        (**self).handle_dropped();
     }
 }
 
@@ -59,12 +47,12 @@ impl<T: Signal + ?Sized> Signal for alloc::boxed::Box<T> {
 /// code.
 pub trait Seek: Signal {
     /// Shift the starting point of the next `sample` call by `seconds`
-    fn seek(&self, seconds: f32);
+    fn seek(&mut self, seconds: f32);
 }
 
 impl<T: Seek + ?Sized> Seek for alloc::boxed::Box<T> {
     #[inline]
-    fn seek(&self, seconds: f32) {
+    fn seek(&mut self, seconds: f32) {
         (**self).seek(seconds);
     }
 }
@@ -82,7 +70,7 @@ impl<T> MonoToStereo<T> {
 impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
     type Frame = [Sample; 2];
 
-    fn sample(&self, interval: f32, out: &mut [[Sample; 2]]) {
+    fn sample(&mut self, interval: f32, out: &mut [[Sample; 2]]) {
         let n = out.len();
         let buf = flatten_stereo(out);
         self.0.sample(interval, &mut buf[..n]);
@@ -93,11 +81,6 @@ impl<T: Signal<Frame = Sample>> Signal for MonoToStereo<T> {
 
     fn is_finished(&self) -> bool {
         self.0.is_finished()
-    }
-
-    #[inline]
-    fn handle_dropped(&self) {
-        self.0.handle_dropped();
     }
 }
 
@@ -110,7 +93,7 @@ impl<T: ?Sized> Filter for MonoToStereo<T> {
 }
 
 impl<T: Seek + Signal<Frame = Sample>> Seek for MonoToStereo<T> {
-    fn seek(&self, seconds: f32) {
+    fn seek(&mut self, seconds: f32) {
         self.0.seek(seconds)
     }
 }
@@ -125,7 +108,7 @@ mod tests {
 
     impl Signal for CountingSignal {
         type Frame = Sample;
-        fn sample(&self, _: f32, out: &mut [Sample]) {
+        fn sample(&mut self, _: f32, out: &mut [Sample]) {
             for x in out {
                 let i = self.0.get();
                 *x = i as f32;

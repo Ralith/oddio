@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, sync::Arc, vec};
 use core::cell::RefCell;
 
-use crate::{frame, set, Controlled, Frame, Handle, Set, SetHandle, Signal, Stop};
+use crate::{frame, set, Controlled, Frame, Handle, Set, SetHandle, Signal};
 
 /// Handle for controlling a [`Mixer`] from another thread
 pub struct MixerControl<'a, T>(&'a Mixer<T>);
@@ -15,14 +15,11 @@ impl<T> MixerControl<'_, T> {
     ///
     /// The type of signal given determines what additional controls can be used. See the
     /// examples for a detailed guide.
-    pub fn play<S>(&mut self, signal: S) -> Handle<Stop<S>>
+    pub fn play<S>(&mut self, signal: S)
     where
         S: Signal<Frame = T> + Send + 'static,
     {
-        let signal = Arc::new(Stop::new(signal));
-        let handle = unsafe { Handle::from_arc(signal.clone()) };
-        self.0.send.borrow_mut().insert(signal);
-        handle
+        self.0.send.borrow_mut().insert(Box::new(signal));
     }
 }
 
@@ -74,7 +71,7 @@ struct Inner<T> {
 impl<T: Frame> Signal for Mixer<T> {
     type Frame = T;
 
-    fn sample(&self, interval: f32, out: &mut [T]) {
+    fn sample(&mut self, interval: f32, out: &mut [T]) {
         let this = &mut *self.recv.borrow_mut();
         this.set.update();
 
@@ -83,18 +80,9 @@ impl<T: Frame> Signal for Mixer<T> {
         }
 
         for i in (0..this.set.len()).rev() {
-            let signal = &this.set[i];
-            if Arc::strong_count(signal) == 1 {
-                signal.handle_dropped();
-            }
+            let signal = &mut this.set[i];
             if signal.is_finished() {
-                signal.stop();
-            }
-            if signal.is_stopped() {
                 this.set.remove(i);
-                continue;
-            }
-            if signal.is_paused() {
                 continue;
             }
 
@@ -112,4 +100,4 @@ impl<T: Frame> Signal for Mixer<T> {
     }
 }
 
-type ErasedSignal<T> = Arc<Stop<dyn Signal<Frame = T>>>;
+type ErasedSignal<T> = Box<dyn Signal<Frame = T>>;

@@ -20,7 +20,7 @@ where
 {
     type Frame = Sample;
 
-    fn sample(&self, interval: f32, out: &mut [Sample]) {
+    fn sample(&mut self, interval: f32, out: &mut [Sample]) {
         const CHUNK_SIZE: usize = 256;
 
         let mut buf = [Frame::ZERO; CHUNK_SIZE];
@@ -35,10 +35,6 @@ where
     fn is_finished(&self) -> bool {
         self.0.is_finished()
     }
-
-    fn handle_dropped(&self) {
-        self.0.handle_dropped();
-    }
 }
 
 impl<T: ?Sized> Filter for Downmix<T> {
@@ -48,6 +44,8 @@ impl<T: ?Sized> Filter for Downmix<T> {
         &self.0
     }
 }
+
+// TODO: impl Seek
 
 #[cfg(test)]
 mod tests {

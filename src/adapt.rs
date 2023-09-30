@@ -68,7 +68,7 @@ where
 {
     type Frame = T::Frame;
 
-    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+    fn sample(&mut self, interval: f32, out: &mut [T::Frame]) {
         let alpha = 1.0 - (-interval / self.options.tau).exp();
         self.inner.sample(interval, out);
         for x in out {

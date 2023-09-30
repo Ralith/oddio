@@ -1,5 +1,9 @@
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
-use core::{cell::UnsafeCell, mem, ops::Deref};
+use core::{
+    cell::UnsafeCell,
+    mem,
+    ops::{Deref, DerefMut},
+};
 
 use crate::spsc;
 
@@ -189,6 +193,13 @@ impl<T> Deref for Set<T> {
     fn deref(&self) -> &[T] {
         let this = unsafe { &mut (*self.0.get()) };
         &this.signals
+    }
+}
+
+impl<T> DerefMut for Set<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        let this = unsafe { &mut (*self.0.get()) };
+        &mut this.signals
     }
 }
 

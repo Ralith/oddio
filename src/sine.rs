@@ -32,7 +32,7 @@ impl Sine {
 impl Signal for Sine {
     type Frame = Sample;
 
-    fn sample(&self, interval: f32, out: &mut [Sample]) {
+    fn sample(&mut self, interval: f32, out: &mut [Sample]) {
         for (i, x) in out.iter_mut().enumerate() {
             let t = interval * i as f32;
             *x = (t * self.frequency + self.phase.get()).sin();
@@ -42,7 +42,7 @@ impl Signal for Sine {
 }
 
 impl Seek for Sine {
-    fn seek(&self, seconds: f32) {
+    fn seek(&mut self, seconds: f32) {
         self.seek_to(seconds);
     }
 }

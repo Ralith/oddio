@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::{
     cell::{Cell, RefCell},
@@ -9,11 +10,11 @@ use crate::{
     ring::Ring,
     set::{set, Set, SetHandle},
     swap::Swap,
-    Controlled, Filter, FilterHaving, Handle, Sample, Seek, Signal, Stop,
+    Controlled, Filter, FilterHaving, Handle, Sample, Seek, Signal,
 };
 
-type ErasedSpatialBuffered = Arc<SpatialBuffered<Stop<dyn Signal<Frame = Sample> + Send>>>;
-type ErasedSpatial = Arc<Spatial<Stop<dyn Seek<Frame = Sample> + Send>>>;
+type ErasedSpatialBuffered = Box<SpatialBuffered<dyn Signal<Frame = Sample> + Send>>;
+type ErasedSpatial = Box<Spatial<dyn Seek<Frame = Sample> + Send>>;
 
 /// An individual buffered spatialized signal
 pub struct SpatialBuffered<T: ?Sized> {
@@ -108,6 +109,7 @@ struct Common {
     state: RefCell<State>,
     /// How long ago the signal finished, if it did
     finished_for: Cell<Option<f32>>,
+    stopped: Cell<bool>,
 }
 
 impl Common {
@@ -121,6 +123,7 @@ impl Common {
             }),
             state: RefCell::new(State::new(position)),
             finished_for: Cell::new(None),
+            stopped: Cell::new(false),
         }
     }
 }
@@ -195,25 +198,22 @@ impl Default for SpatialScene {
     }
 }
 
-fn walk_set<T, U, I>(
-    set: &mut Set<Arc<T>>,
+fn walk_set<T, U>(
+    set: &mut Set<Box<T>>,
     get_common: impl Fn(&T) -> &Common,
+    get_inner: impl Fn(&T) -> &U,
     prev_rot: &mint::Quaternion<f32>,
     rot: &mint::Quaternion<f32>,
     elapsed: f32,
-    mut mix_signal: impl FnMut(&T, mint::Point3<f32>, mint::Point3<f32>),
+    mut mix_signal: impl FnMut(&mut T, mint::Point3<f32>, mint::Point3<f32>),
 ) where
-    T: FilterHaving<Stop<U>, I> + ?Sized,
+    T: ?Sized,
     U: Signal + ?Sized,
 {
     set.update();
     for i in (0..set.len()).rev() {
-        let signal = &set[i];
-        let stop = <T as FilterHaving<Stop<U>, _>>::get(signal);
+        let signal = &mut set[i];
         let common = get_common(signal);
-        if Arc::strong_count(signal) == 1 {
-            stop.handle_dropped();
-        }
 
         let prev_position;
         let next_position;
@@ -254,23 +254,19 @@ fn walk_set<T, U, I>(
         match common.finished_for.get() {
             Some(t) => {
                 if t > distance / SPEED_OF_SOUND {
-                    stop.stop();
+                    common.stopped.set(true);
                 } else {
                     common.finished_for.set(Some(t + elapsed));
                 }
             }
             None => {
-                if stop.is_finished() {
+                if get_inner(signal).is_finished() {
                     common.finished_for.set(Some(elapsed));
                 }
             }
         }
-        if stop.is_stopped() {
+        if common.stopped.get() {
             set.remove(i);
-            continue;
-        }
-
-        if stop.is_paused() {
             continue;
         }
 
@@ -304,19 +300,17 @@ impl<'a> SpatialSceneControl<'a> {
     ///
     /// The type of signal given determines what additional controls can be used. See the
     /// examples for a detailed guide.
-    pub fn play<S>(&mut self, signal: S, options: SpatialOptions) -> Handle<Spatial<Stop<S>>>
+    pub fn play<S>(&mut self, signal: S, options: SpatialOptions)
     where
         S: Seek<Frame = Sample> + Send + 'static,
     {
-        let signal = Arc::new(Spatial::new(
-            Stop::new(signal),
+        let signal = Box::new(Spatial::new(
+            signal,
             options.position,
             options.velocity,
             options.radius,
         ));
-        let handle = unsafe { Handle::from_arc(signal.clone()) };
         self.0.send.borrow_mut().insert(signal);
-        handle
     }
 
     /// Like [`play`](Self::play), but supports propagation delay for sources which do not implement `Seek` by
@@ -336,21 +330,18 @@ impl<'a> SpatialSceneControl<'a> {
         max_distance: f32,
         rate: u32,
         buffer_duration: f32,
-    ) -> Handle<SpatialBuffered<Stop<S>>>
-    where
+    ) where
         S: Signal<Frame = Sample> + Send + 'static,
     {
-        let signal = Arc::new(SpatialBuffered::new(
+        let signal = Box::new(SpatialBuffered::new(
             rate,
-            Stop::new(signal),
+            signal,
             options.position,
             options.velocity,
             max_distance / SPEED_OF_SOUND + buffer_duration,
             options.radius,
         ));
-        let handle = unsafe { Handle::from_arc(signal.clone()) };
         self.0.send_buffered.borrow_mut().insert(signal);
-        handle
     }
 
     /// Set the listener's rotation
@@ -389,7 +380,7 @@ impl Default for SpatialOptions {
 impl Signal for SpatialScene {
     type Frame = [Sample; 2];
 
-    fn sample(&self, interval: f32, out: &mut [[Sample; 2]]) {
+    fn sample(&mut self, interval: f32, out: &mut [[Sample; 2]]) {
         let set = &mut *self.recv_buffered.borrow_mut();
         // Update set contents
         set.update();
@@ -411,6 +402,7 @@ impl Signal for SpatialScene {
         walk_set(
             set,
             |signal| &signal.common,
+            |signal| &signal.inner,
             &prev_rot,
             &rot,
             elapsed,
@@ -421,7 +413,7 @@ impl Signal for SpatialScene {
                 signal
                     .queue
                     .borrow_mut()
-                    .write(&signal.inner, signal.rate, elapsed);
+                    .write(&mut signal.inner, signal.rate, elapsed);
 
                 // Mix into output
                 for &ear in &[Ear::Left, Ear::Right] {
@@ -456,6 +448,7 @@ impl Signal for SpatialScene {
         walk_set(
             set,
             |signal| &signal.common,
+            |signal| &signal.inner,
             &prev_rot,
             &rot,
             elapsed,

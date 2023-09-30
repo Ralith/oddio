@@ -166,7 +166,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
     type Frame = T;
 
     #[inline]
-    fn sample(&self, interval: f32, out: &mut [T]) {
+    fn sample(&mut self, interval: f32, out: &mut [T]) {
         let s0 = self.t.get() * self.data.rate;
         let ds = interval * self.data.rate as f32;
         let base = s0 as isize;
@@ -202,7 +202,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
 
 impl<T: Frame + Copy> Seek for FramesSignal<T> {
     #[inline]
-    fn seek(&self, seconds: f32) {
+    fn seek(&mut self, seconds: f32) {
         self.t.set(self.t.get() + f64::from(seconds));
     }
 }

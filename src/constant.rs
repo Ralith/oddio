@@ -13,11 +13,11 @@ impl<T> Constant<T> {
 impl<T: Clone> Signal for Constant<T> {
     type Frame = T;
 
-    fn sample(&self, _interval: f32, out: &mut [T]) {
+    fn sample(&mut self, _interval: f32, out: &mut [T]) {
         out.fill(self.0.clone());
     }
 }
 
 impl<T: Clone> Seek for Constant<T> {
-    fn seek(&self, _: f32) {}
+    fn seek(&mut self, _: f32) {}
 }

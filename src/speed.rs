@@ -26,18 +26,13 @@ where
 {
     type Frame = T::Frame;
 
-    fn sample(&self, interval: f32, out: &mut [T::Frame]) {
+    fn sample(&mut self, interval: f32, out: &mut [T::Frame]) {
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
         self.inner.sample(interval * speed, out);
     }
 
     fn is_finished(&self) -> bool {
         self.inner.is_finished()
-    }
-
-    #[inline]
-    fn handle_dropped(&self) {
-        self.inner.handle_dropped();
     }
 }
 
