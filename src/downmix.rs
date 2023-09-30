@@ -1,4 +1,4 @@
-use crate::{Frame, Sample, Signal};
+use crate::{Frame, Sample, Seek, Signal};
 
 /// Sums all channels together
 ///
@@ -37,7 +37,14 @@ where
     }
 }
 
-// TODO: impl Seek
+impl<T: Seek + Signal + ?Sized> Seek for Downmix<T>
+where
+    T::Frame: Frame,
+{
+    fn seek(&mut self, seconds: f32) {
+        self.0.seek(seconds);
+    }
+}
 
 #[cfg(test)]
 mod tests {
