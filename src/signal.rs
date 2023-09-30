@@ -92,26 +92,24 @@ impl<T: Seek + Signal<Frame = Sample>> Seek for MonoToStereo<T> {
 
 #[cfg(test)]
 mod tests {
-    use core::cell::Cell;
-
     use super::*;
 
-    struct CountingSignal(Cell<u32>);
+    struct CountingSignal(u32);
 
     impl Signal for CountingSignal {
         type Frame = Sample;
         fn sample(&mut self, _: f32, out: &mut [Sample]) {
             for x in out {
-                let i = self.0.get();
+                let i = self.0;
                 *x = i as f32;
-                self.0.set(i + 1);
+                self.0 = i + 1;
             }
         }
     }
 
     #[test]
     fn mono_to_stereo() {
-        let mut signal = MonoToStereo::new(CountingSignal(Cell::new(0)));
+        let mut signal = MonoToStereo::new(CountingSignal(0));
         let mut buf = [[0.0; 2]; 4];
         signal.sample(1.0, (&mut buf[..]).into());
         assert_eq!(buf, [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]);

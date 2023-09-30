@@ -1,15 +1,13 @@
 //! Streaming audio support
 
-use core::cell::{Cell, RefCell};
-
 use crate::{frame, math::Float, spsc, Frame, Signal};
 
 /// Dynamic audio from an external source
 pub struct Stream<T> {
     rate: u32,
-    inner: RefCell<spsc::Receiver<T>>,
+    inner: spsc::Receiver<T>,
     /// Offset of t=0 from the start of the buffer, in frames
-    t: Cell<f32>,
+    t: f32,
     /// Whether `inner` will receive no further updates
     stopping: bool,
 }
@@ -27,8 +25,8 @@ impl<T> Stream<T> {
         let (send, recv) = spsc::channel(size);
         let signal = Self {
             rate,
-            inner: RefCell::new(recv),
-            t: Cell::new(0.0),
+            inner: recv,
+            t: 0.0,
             stopping: false,
         };
         let control = StreamControl(send);
@@ -44,11 +42,10 @@ impl<T> Stream<T> {
             return T::ZERO;
         }
         let sample = sample as usize;
-        let inner = self.inner.borrow();
-        if sample >= inner.len() {
+        if sample >= self.inner.len() {
             return T::ZERO;
         }
-        inner[sample]
+        self.inner[sample]
     }
 
     fn sample_single(&self, s: f32) -> T
@@ -63,12 +60,11 @@ impl<T> Stream<T> {
         frame::lerp(&a, &b, fract)
     }
 
-    fn advance(&self, dt: f32) {
-        let mut inner = self.inner.borrow_mut();
-        let next = self.t.get() + dt * self.rate as f32;
-        let t = next.min(inner.len() as f32);
-        inner.release(t as usize);
-        self.t.set(t.fract());
+    fn advance(&mut self, dt: f32) {
+        let next = self.t + dt * self.rate as f32;
+        let t = next.min(self.inner.len() as f32);
+        self.inner.release(t as usize);
+        self.t = t.fract();
     }
 }
 
@@ -76,11 +72,11 @@ impl<T: Frame + Copy> Signal for Stream<T> {
     type Frame = T;
 
     fn sample(&mut self, interval: f32, out: &mut [T]) {
-        self.inner.borrow_mut().update();
-        if self.inner.borrow().is_closed() {
+        self.inner.update();
+        if self.inner.is_closed() {
             self.stopping = true;
         }
-        let s0 = self.t.get();
+        let s0 = self.t;
         let ds = interval * self.rate as f32;
 
         for (i, o) in out.iter_mut().enumerate() {
@@ -91,7 +87,7 @@ impl<T: Frame + Copy> Signal for Stream<T> {
 
     #[allow(clippy::float_cmp)]
     fn is_finished(&self) -> bool {
-        self.stopping && self.t.get() == self.inner.borrow().len() as f32
+        self.stopping && self.t == self.inner.len() as f32
     }
 }
 

@@ -1,8 +1,5 @@
 use alloc::sync::Arc;
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::{frame, math::Float, Frame, Seek, Signal, Smoothed};
 
@@ -60,7 +57,7 @@ where
 /// mapping the maximum volume to 0 decibels, and the minimum to e.g. -60.
 pub struct Gain<T: ?Sized> {
     shared: Arc<AtomicU32>,
-    gain: RefCell<Smoothed<f32>>,
+    gain: Smoothed<f32>,
     inner: T,
 }
 
@@ -69,7 +66,7 @@ impl<T> Gain<T> {
     pub fn new(signal: T) -> (GainControl, Self) {
         let signal = Gain {
             shared: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            gain: RefCell::new(Smoothed::new(1.0)),
+            gain: Smoothed::new(1.0),
             inner: signal,
         };
         let handle = GainControl(signal.shared.clone());
@@ -92,7 +89,7 @@ impl<T> Gain<T> {
     /// needed, or even have its phase inverted with a negative factor.
     pub fn set_amplitude_ratio(&mut self, factor: f32) {
         self.shared.store(factor.to_bits(), Ordering::Relaxed);
-        *self.gain.get_mut() = Smoothed::new(factor);
+        self.gain = Smoothed::new(factor);
     }
 }
 
@@ -106,12 +103,11 @@ where
     fn sample(&mut self, interval: f32, out: &mut [T::Frame]) {
         self.inner.sample(interval, out);
         let shared = f32::from_bits(self.shared.load(Ordering::Relaxed));
-        let mut gain = self.gain.borrow_mut();
-        if gain.target() != &shared {
-            gain.set(shared);
+        if self.gain.target() != &shared {
+            self.gain.set(shared);
         }
-        if gain.progress() == 1.0 {
-            let g = gain.get();
+        if self.gain.progress() == 1.0 {
+            let g = self.gain.get();
             if g != 1.0 {
                 for x in out {
                     *x = frame::scale(x, g);
@@ -120,8 +116,8 @@ where
             return;
         }
         for x in out {
-            *x = frame::scale(x, gain.get());
-            gain.advance(interval / SMOOTHING_PERIOD);
+            *x = frame::scale(x, self.gain.get());
+            self.gain.advance(interval / SMOOTHING_PERIOD);
         }
     }
 

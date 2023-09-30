@@ -1,5 +1,3 @@
-use core::cell::Cell;
-
 use crate::{math::Float, Frame, Signal};
 
 /// Smoothly adjusts gain over time to keep average (RMS) signal level within a target range
@@ -15,7 +13,7 @@ use crate::{math::Float, Frame, Signal};
 /// perception of loudness is logarithmic.
 pub struct Adapt<T: ?Sized> {
     options: AdaptOptions,
-    avg_squared: Cell<f32>,
+    avg_squared: f32,
     inner: T,
 }
 
@@ -27,7 +25,7 @@ impl<T> Adapt<T> {
     pub fn new(signal: T, initial_rms: f32, options: AdaptOptions) -> Self {
         Self {
             options,
-            avg_squared: Cell::new(initial_rms * initial_rms),
+            avg_squared: initial_rms * initial_rms,
             inner: signal,
         }
     }
@@ -73,9 +71,8 @@ where
         self.inner.sample(interval, out);
         for x in out {
             let sample = x.channels().iter().sum::<f32>();
-            self.avg_squared
-                .set(sample * sample * alpha + self.avg_squared.get() * (1.0 - alpha));
-            let avg_peak = self.avg_squared.get().sqrt() * 2.0f32.sqrt();
+            self.avg_squared = sample * sample * alpha + self.avg_squared * (1.0 - alpha);
+            let avg_peak = self.avg_squared.sqrt() * 2.0f32.sqrt();
             let gain = if avg_peak < self.options.low {
                 (self.options.low / avg_peak).min(self.options.max_gain)
             } else if avg_peak > self.options.high {

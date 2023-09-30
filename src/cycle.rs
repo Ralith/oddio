@@ -1,12 +1,11 @@
 use alloc::sync::Arc;
-use core::cell::Cell;
 
 use crate::{frame, math::Float, Frame, Frames, Seek, Signal};
 
 /// Loops [`Frames`] end-to-end to construct a repeating signal
 pub struct Cycle<T> {
     /// Current playback time, in samples
-    cursor: Cell<f64>,
+    cursor: f64,
     frames: Arc<Frames<T>>,
 }
 
@@ -15,7 +14,7 @@ impl<T> Cycle<T> {
     // TODO: Crossfade
     pub fn new(frames: Arc<Frames<T>>) -> Self {
         Self {
-            cursor: Cell::new(0.0),
+            cursor: 0.0,
             frames,
         }
     }
@@ -26,8 +25,8 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
 
     fn sample(&mut self, interval: f32, out: &mut [T]) {
         let ds = interval * self.frames.rate() as f32;
-        let mut base = self.cursor.get() as usize;
-        let mut offset = (self.cursor.get() - base as f64) as f32;
+        let mut base = self.cursor as usize;
+        let mut offset = (self.cursor - base as f64) as f32;
         for o in out {
             let trunc = unsafe { offset.to_int_unchecked::<usize>() };
             let fract = offset - trunc as f32;
@@ -50,15 +49,14 @@ impl<T: Frame + Copy> Signal for Cycle<T> {
             *o = frame::lerp(&a, &b, fract);
             offset += ds;
         }
-        self.cursor.set(base as f64 + offset as f64);
+        self.cursor = base as f64 + offset as f64;
     }
 }
 
 impl<T: Frame + Copy> Seek for Cycle<T> {
     fn seek(&mut self, seconds: f32) {
-        let s = (self.cursor.get() + f64::from(seconds) * self.frames.rate() as f64)
+        self.cursor = (self.cursor + f64::from(seconds) * self.frames.rate() as f64)
             .rem_euclid(self.frames.len() as f64);
-        self.cursor.set(s);
     }
 }
 
