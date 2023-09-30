@@ -1,8 +1,5 @@
 use alloc::sync::Arc;
-use core::{
-    cell::{Cell, UnsafeCell},
-    mem,
-};
+use core::mem;
 
 use crate::{frame, math::Float, Frame, Signal, Swap};
 
@@ -11,18 +8,18 @@ use crate::{frame, math::Float, Frame, Signal, Swap};
 /// Uses constant-power fading, suitable for blending uncorrelated signals without distorting
 /// perceived loudness
 pub struct Fader<T> {
-    progress: Cell<f32>,
-    inner: UnsafeCell<T>,
+    progress: f32,
     next: Arc<Swap<Option<Command<T>>>>,
+    inner: T,
 }
 
 impl<T> Fader<T> {
     /// Create a fader initially wrapping `inner`
     pub fn new(inner: T) -> (FaderControl<T>, Self) {
         let signal = Self {
-            progress: Cell::new(1.0),
-            inner: UnsafeCell::new(inner),
+            progress: 1.0,
             next: Arc::new(Swap::new(|| None)),
+            inner,
         };
         let control = FaderControl(signal.next.clone());
         (control, signal)
@@ -37,15 +34,13 @@ where
 
     #[allow(clippy::float_cmp)]
     fn sample(&mut self, interval: f32, mut out: &mut [T::Frame]) {
-        let inner = unsafe { &mut *self.inner.get() };
-
-        if self.progress.get() >= 1.0 {
+        if self.progress >= 1.0 {
             // A fade must complete before a new one begins
             if self.next.refresh() {
-                self.progress.set(0.0);
+                self.progress = 0.0;
             } else {
                 // Fast path
-                inner.sample(interval, out);
+                self.inner.sample(interval, out);
                 return;
             }
         }
@@ -55,23 +50,22 @@ where
         while !out.is_empty() {
             let mut buffer = [(); 1024].map(|()| T::Frame::ZERO);
             let n = buffer.len().min(out.len());
-            inner.sample(interval, &mut buffer);
+            self.inner.sample(interval, &mut buffer);
             next.fade_to.sample(interval, out);
 
             for (o, x) in out.iter_mut().zip(&buffer) {
-                let fade_out = (1.0 - self.progress.get()).sqrt();
-                let fade_in = self.progress.get().sqrt();
+                let fade_out = (1.0 - self.progress).sqrt();
+                let fade_in = self.progress.sqrt();
                 *o = frame::mix(&frame::scale(x, fade_out), &frame::scale(o, fade_in));
-                self.progress
-                    .set((self.progress.get() + increment).min(1.0));
+                self.progress = (self.progress + increment).min(1.0);
             }
             out = &mut out[n..];
         }
 
-        if self.progress.get() >= 1.0 {
+        if self.progress >= 1.0 {
             // We've finished fading; move the new signal into `self`, and stash the old one back in
             // `next` to be dropped by a future `fade_to` call.
-            mem::swap(inner, &mut next.fade_to);
+            mem::swap(&mut self.inner, &mut next.fade_to);
         }
     }
 

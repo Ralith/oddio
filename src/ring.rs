@@ -81,19 +81,17 @@ impl Ring {
 
 #[cfg(test)]
 mod tests {
-    use core::cell::Cell;
-
     use super::*;
 
-    struct TimeSignal(Cell<f32>);
+    struct TimeSignal(f32);
 
     impl Signal for TimeSignal {
         type Frame = Sample;
         fn sample(&mut self, interval: f32, out: &mut [Sample]) {
             for x in out {
-                let t = self.0.get();
+                let t = self.0;
                 *x = t as f32;
-                self.0.set(t + interval);
+                self.0 = t + interval;
             }
         }
     }
@@ -107,7 +105,7 @@ mod tests {
     #[test]
     fn fill() {
         let mut r = Ring::new(4);
-        let mut s = TimeSignal(Cell::new(1.0));
+        let mut s = TimeSignal(1.0);
 
         r.write(&mut s, 1, 1.0);
         assert_eq!(r.write, 1.0);
@@ -124,7 +122,7 @@ mod tests {
     #[test]
     fn wrap() {
         let mut r = Ring::new(4);
-        let mut s = TimeSignal(Cell::new(1.0));
+        let mut s = TimeSignal(1.0);
 
         r.write(&mut s, 1, 3.0);
         assert_eq!(r.buffer[..], [1.0, 2.0, 3.0, 0.0]);

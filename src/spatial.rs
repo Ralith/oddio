@@ -1,8 +1,5 @@
 use alloc::{boxed::Box, sync::Arc};
-use core::{
-    cell::{Cell, RefCell},
-    ops::{Index, IndexMut},
-};
+use core::ops::{Index, IndexMut};
 
 use crate::{
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub, Float},
@@ -24,7 +21,7 @@ struct SpatialSignalBuffered<T: ?Sized> {
     ///
     /// Accounts only for the source's velocity. Listener velocity and attenuation are handled at
     /// output time.
-    queue: RefCell<Ring>,
+    queue: Ring,
     inner: T,
 }
 
@@ -46,7 +43,7 @@ impl<T> SpatialSignalBuffered<T> {
             rate,
             max_delay,
             common: Common::new(radius, position, velocity),
-            queue: RefCell::new(queue),
+            queue: queue,
             inner,
         }
     }
@@ -75,10 +72,10 @@ impl<T> SpatialSignal<T> {
 struct Common {
     radius: f32,
     motion: Arc<Swap<Motion>>,
-    state: RefCell<State>,
+    state: State,
     /// How long ago the signal finished, if it did
-    finished_for: Cell<Option<f32>>,
-    stopped: Cell<bool>,
+    finished_for: Option<f32>,
+    stopped: bool,
 }
 
 impl Common {
@@ -90,9 +87,9 @@ impl Common {
                 velocity,
                 discontinuity: false,
             })),
-            state: RefCell::new(State::new(position)),
-            finished_for: Cell::new(None),
-            stopped: Cell::new(false),
+            state: State::new(position),
+            finished_for: None,
+            stopped: false,
         }
     }
 }
@@ -132,8 +129,8 @@ impl Spatial {
 /// [`Signal`] for stereo output from a spatial scene
 pub struct SpatialScene {
     rot: Arc<Swap<mint::Quaternion<f32>>>,
-    recv_buffered: RefCell<Set<ErasedSpatialBuffered>>,
-    recv: RefCell<Set<ErasedSpatial>>,
+    recv_buffered: Set<ErasedSpatialBuffered>,
+    recv: Set<ErasedSpatial>,
 }
 
 impl SpatialScene {
@@ -154,18 +151,16 @@ impl SpatialScene {
         };
         let signal = SpatialScene {
             rot,
-            recv_buffered: RefCell::new(buffered_set),
-            recv: RefCell::new(seek_set),
+            recv_buffered: buffered_set,
+            recv: seek_set,
         };
         (control, signal)
     }
 }
 
-unsafe impl Send for SpatialScene {}
-
 fn walk_set<T, U>(
     set: &mut Set<Box<T>>,
-    get_common: impl Fn(&T) -> &Common,
+    get_common: impl Fn(&mut T) -> &mut Common,
     get_inner: impl Fn(&T) -> &U,
     prev_rot: &mint::Quaternion<f32>,
     rot: &mint::Quaternion<f32>,
@@ -185,7 +180,7 @@ fn walk_set<T, U>(
         unsafe {
             // Compute the signal's smoothed start/end positions over the sampled period
             // TODO: Use historical positions
-            let mut state = common.state.borrow_mut();
+            let state = &mut common.state;
 
             // Update motion
             let orig_next = *common.motion.received();
@@ -216,21 +211,21 @@ fn walk_set<T, U>(
         // Discard finished sources. If a source is moving away faster than the speed of sound, you
         // might get a pop.
         let distance = norm(prev_position.into());
-        match common.finished_for.get() {
+        match common.finished_for {
             Some(t) => {
                 if t > distance / SPEED_OF_SOUND {
-                    common.stopped.set(true);
+                    common.stopped = true;
                 } else {
-                    common.finished_for.set(Some(t + elapsed));
+                    common.finished_for = Some(t + elapsed);
                 }
             }
             None => {
                 if get_inner(signal).is_finished() {
-                    common.finished_for.set(Some(elapsed));
+                    get_common(signal).finished_for = Some(elapsed);
                 }
             }
         }
-        if common.stopped.get() {
+        if get_common(signal).stopped {
             set.remove(i);
             continue;
         }
@@ -347,7 +342,7 @@ impl Signal for SpatialScene {
     type Frame = [Sample; 2];
 
     fn sample(&mut self, interval: f32, out: &mut [[Sample; 2]]) {
-        let set = &mut *self.recv_buffered.borrow_mut();
+        let set = &mut self.recv_buffered;
         // Update set contents
         set.update();
 
@@ -367,7 +362,7 @@ impl Signal for SpatialScene {
         let elapsed = interval * out.len() as f32;
         walk_set(
             set,
-            |signal| &signal.common,
+            |signal| &mut signal.common,
             |signal| &signal.inner,
             &prev_rot,
             &rot,
@@ -376,10 +371,7 @@ impl Signal for SpatialScene {
                 debug_assert!(signal.max_delay >= elapsed);
 
                 // Extend delay queue with new data
-                signal
-                    .queue
-                    .borrow_mut()
-                    .write(&mut signal.inner, signal.rate, elapsed);
+                signal.queue.write(&mut signal.inner, signal.rate, elapsed);
 
                 // Mix into output
                 for &ear in &[Ear::Left, Ear::Right] {
@@ -394,7 +386,7 @@ impl Signal for SpatialScene {
                     let d_gain = (next_state.gain - prev_state.gain) / out.len() as f32;
 
                     let mut i = 0;
-                    let queue = signal.queue.borrow();
+                    let queue = &mut signal.queue;
                     for chunk in out.chunks_mut(buf.len()) {
                         let t = prev_offset + i as f32 * dt;
                         queue.sample(signal.rate, t, dt, &mut buf[..chunk.len()]);
@@ -408,12 +400,12 @@ impl Signal for SpatialScene {
             },
         );
 
-        let set = &mut *self.recv.borrow_mut();
+        let set = &mut self.recv;
         // Update set contents
         set.update();
         walk_set(
             set,
-            |signal| &signal.common,
+            |signal| &mut signal.common,
             |signal| &signal.inner,
             &prev_rot,
             &rot,
@@ -615,25 +607,25 @@ mod tests {
         );
         scene.sample(0.0, &mut []);
         assert_eq!(
-            scene.recv.borrow().len(),
+            scene.recv.len(),
             1,
             "signal remains after no time has passed"
         );
         scene.sample(0.6, &mut [[0.0; 2]]);
         assert_eq!(
-            scene.recv.borrow().len(),
+            scene.recv.len(),
             1,
             "signal remains partway through propagation"
         );
         scene.sample(0.6, &mut [[0.0; 2]]);
         assert_eq!(
-            scene.recv.borrow().len(),
+            scene.recv.len(),
             1,
             "signal remains immediately after propagation delay expires"
         );
         scene.sample(0.0, &mut []);
         assert_eq!(
-            scene.recv.borrow().len(),
+            scene.recv.len(),
             0,
             "signal dropped on first past after propagation delay expires"
         );

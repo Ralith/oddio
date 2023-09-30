@@ -69,6 +69,9 @@ impl<T: Default> Default for Swap<T> {
     }
 }
 
+unsafe impl<T: Send> Send for Swap<T> {}
+unsafe impl<T> Sync for Swap<T> {}
+
 const FRESH_BIT: usize = 0b100;
 const INDEX_MASK: usize = 0b011;
 

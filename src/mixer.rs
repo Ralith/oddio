@@ -1,8 +1,5 @@
 use alloc::{boxed::Box, sync::Arc, vec};
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{frame, set, Frame, Set, SetHandle, Signal};
 
@@ -55,7 +52,7 @@ impl<T> MixedSignal<T> {
 
 /// A [`Signal`] that mixes a dynamic set of [`Signal`]s
 pub struct Mixer<T> {
-    recv: RefCell<Inner<T>>,
+    recv: Inner<T>,
 }
 
 impl<T> Mixer<T>
@@ -68,10 +65,10 @@ where
         (
             MixerControl(handle),
             Self {
-                recv: RefCell::new(Inner {
+                recv: Inner {
                     set,
                     buffer: vec![T::ZERO; 1024].into(),
-                }),
+                },
             },
         )
     }
@@ -86,7 +83,7 @@ impl<T: Frame> Signal for Mixer<T> {
     type Frame = T;
 
     fn sample(&mut self, interval: f32, out: &mut [T]) {
-        let this = &mut *self.recv.borrow_mut();
+        let this = &mut self.recv;
         this.set.update();
 
         for o in out.iter_mut() {

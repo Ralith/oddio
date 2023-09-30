@@ -1,6 +1,5 @@
 use crate::alloc::{alloc, boxed::Box, sync::Arc};
 use core::{
-    cell::Cell,
     mem,
     ops::{Deref, DerefMut},
     ptr,
@@ -142,7 +141,7 @@ pub struct FramesSignal<T> {
     /// Frames to play
     data: Arc<Frames<T>>,
     /// Playback position in seconds
-    t: Cell<f64>,
+    t: f64,
     /// Approximation of t in samples, for reading from the control. We could store t's bits in an
     /// AtomicU64 here, but that would sacrifice portability to platforms that don't have it,
     /// e.g. mips32.
@@ -155,7 +154,7 @@ impl<T> FramesSignal<T> {
     /// `start_seconds` adjusts the initial playback position, and may be negative.
     pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> (FramesSignalControl, Self) {
         let signal = Self {
-            t: Cell::new(start_seconds),
+            t: start_seconds,
             sample_t: Arc::new(AtomicIsize::new((start_seconds * data.rate) as isize)),
             data,
         };
@@ -169,7 +168,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
 
     #[inline]
     fn sample(&mut self, interval: f32, out: &mut [T]) {
-        let s0 = self.t.get() * self.data.rate;
+        let s0 = self.t * self.data.rate;
         let ds = interval * self.data.rate as f32;
         let base = s0 as isize;
         if (ds - 1.0).abs() <= f32::EPSILON {
@@ -190,22 +189,21 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
                 offset += ds;
             }
         }
-        self.t
-            .set(self.t.get() + f64::from(interval) * out.len() as f64);
+        self.t += f64::from(interval) * out.len() as f64;
         self.sample_t
-            .store((self.t.get() * self.data.rate) as isize, Ordering::Relaxed);
+            .store((self.t * self.data.rate) as isize, Ordering::Relaxed);
     }
 
     #[inline]
     fn is_finished(&self) -> bool {
-        self.t.get() >= self.data.samples.len() as f64 / self.data.rate
+        self.t >= self.data.samples.len() as f64 / self.data.rate
     }
 }
 
 impl<T: Frame + Copy> Seek for FramesSignal<T> {
     #[inline]
     fn seek(&mut self, seconds: f32) {
-        self.t.set(self.t.get() + f64::from(seconds));
+        self.t += f64::from(seconds);
     }
 }
 
