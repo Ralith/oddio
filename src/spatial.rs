@@ -5,8 +5,7 @@ use crate::{
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub, Float},
     ring::Ring,
     set::{set, Set, SetHandle},
-    swap::Swap,
-    Sample, Seek, Signal,
+    swap, Sample, Seek, Signal,
 };
 
 type ErasedSpatialBuffered = Box<SpatialSignalBuffered<dyn Signal<Frame = Sample> + Send>>;
@@ -33,19 +32,23 @@ impl<T> SpatialSignalBuffered<T> {
         velocity: mint::Vector3<f32>,
         max_delay: f32,
         radius: f32,
-    ) -> Self {
+    ) -> (swap::Sender<Motion>, Self) {
         let mut queue = Ring::new((max_delay * rate as f32).ceil() as usize + 1);
         queue.delay(
             rate,
             (norm(position.into()) / SPEED_OF_SOUND).min(max_delay),
         );
-        Self {
-            rate,
-            max_delay,
-            common: Common::new(radius, position, velocity),
-            queue: queue,
-            inner,
-        }
+        let (send, recv) = Common::new(radius, position, velocity);
+        (
+            send,
+            Self {
+                rate,
+                max_delay,
+                common: recv,
+                queue,
+                inner,
+            },
+        )
     }
 }
 
@@ -61,17 +64,21 @@ impl<T> SpatialSignal<T> {
         position: mint::Point3<f32>,
         velocity: mint::Vector3<f32>,
         radius: f32,
-    ) -> Self {
-        Self {
-            common: Common::new(radius, position, velocity),
-            inner,
-        }
+    ) -> (swap::Sender<Motion>, Self) {
+        let (send, recv) = Common::new(radius, position, velocity);
+        (
+            send,
+            Self {
+                common: recv,
+                inner,
+            },
+        )
     }
 }
 
 struct Common {
     radius: f32,
-    motion: Arc<Swap<Motion>>,
+    motion: swap::Receiver<Motion>,
     state: State,
     /// How long ago the signal finished, if it did
     finished_for: Option<f32>,
@@ -79,23 +86,31 @@ struct Common {
 }
 
 impl Common {
-    fn new(radius: f32, position: mint::Point3<f32>, velocity: mint::Vector3<f32>) -> Self {
-        Self {
-            radius,
-            motion: Arc::new(Swap::new(|| Motion {
-                position,
-                velocity,
-                discontinuity: false,
-            })),
-            state: State::new(position),
-            finished_for: None,
-            stopped: false,
-        }
+    fn new(
+        radius: f32,
+        position: mint::Point3<f32>,
+        velocity: mint::Vector3<f32>,
+    ) -> (swap::Sender<Motion>, Self) {
+        let (send, recv) = swap::swap(|| Motion {
+            position,
+            velocity,
+            discontinuity: false,
+        });
+        (
+            send,
+            Self {
+                radius,
+                motion: recv,
+                state: State::new(position),
+                finished_for: None,
+                stopped: false,
+            },
+        )
     }
 }
 
 /// Control for updating the motion of a spatial signal
-pub struct Spatial(Arc<Swap<Motion>>);
+pub struct Spatial(swap::Sender<Motion>);
 
 impl Spatial {
     /// Update the position and velocity of the signal
@@ -115,20 +130,18 @@ impl Spatial {
         velocity: mint::Vector3<f32>,
         discontinuity: bool,
     ) {
-        unsafe {
-            *self.0.pending() = Motion {
-                position,
-                velocity,
-                discontinuity,
-            };
-        }
+        *self.0.pending() = Motion {
+            position,
+            velocity,
+            discontinuity,
+        };
         self.0.flush();
     }
 }
 
 /// [`Signal`] for stereo output from a spatial scene
 pub struct SpatialScene {
-    rot: Arc<Swap<mint::Quaternion<f32>>>,
+    rot: swap::Receiver<mint::Quaternion<f32>>,
     recv_buffered: Set<ErasedSpatialBuffered>,
     recv: Set<ErasedSpatial>,
 }
@@ -140,17 +153,17 @@ impl SpatialScene {
     pub fn new() -> (SpatialSceneControl, Self) {
         let (seek_handle, seek_set) = set();
         let (buffered_handle, buffered_set) = set();
-        let rot = Arc::new(Swap::new(|| mint::Quaternion {
+        let (rot_send, rot_recv) = swap::swap(|| mint::Quaternion {
             s: 1.0,
             v: [0.0; 3].into(),
-        }));
+        });
         let control = SpatialSceneControl {
-            rot: rot.clone(),
+            rot: rot_send,
             seek: seek_handle,
             buffered: buffered_handle,
         };
         let signal = SpatialScene {
-            rot,
+            rot: rot_recv,
             recv_buffered: buffered_set,
             recv: seek_set,
         };
@@ -177,7 +190,7 @@ fn walk_set<T, U>(
 
         let prev_position;
         let next_position;
-        unsafe {
+        {
             // Compute the signal's smoothed start/end positions over the sampled period
             // TODO: Use historical positions
             let state = &mut common.state;
@@ -185,23 +198,23 @@ fn walk_set<T, U>(
             // Update motion
             let orig_next = *common.motion.received();
             if common.motion.refresh() {
-                state.prev_position = if (*common.motion.received()).discontinuity {
-                    (*common.motion.received()).position
+                state.prev_position = if common.motion.received().discontinuity {
+                    common.motion.received().position
                 } else {
                     state.smoothed_position(0.0, &orig_next)
                 };
                 state.dt = 0.0;
             } else {
-                debug_assert_eq!(orig_next.position, (*common.motion.received()).position);
+                debug_assert_eq!(orig_next.position, common.motion.received().position);
             }
 
             prev_position = rotate(
                 prev_rot,
-                &state.smoothed_position(0.0, &*common.motion.received()),
+                &state.smoothed_position(0.0, common.motion.received()),
             );
             next_position = rotate(
                 rot,
-                &state.smoothed_position(elapsed, &*common.motion.received()),
+                &state.smoothed_position(elapsed, common.motion.received()),
             );
 
             // Set up for next time
@@ -236,7 +249,7 @@ fn walk_set<T, U>(
 
 /// Control for modifying a [`SpatialScene`]
 pub struct SpatialSceneControl {
-    rot: Arc<Swap<mint::Quaternion<f32>>>,
+    rot: swap::Sender<mint::Quaternion<f32>>,
     seek: SetHandle<ErasedSpatial>,
     buffered: SetHandle<ErasedSpatialBuffered>,
 }
@@ -260,13 +273,10 @@ impl SpatialSceneControl {
     where
         S: Seek<Frame = Sample> + Send + 'static,
     {
-        let signal = Box::new(SpatialSignal::new(
-            signal,
-            options.position,
-            options.velocity,
-            options.radius,
-        ));
-        let handle = Spatial(signal.common.motion.clone());
+        let (send, recv) =
+            SpatialSignal::new(signal, options.position, options.velocity, options.radius);
+        let signal = Box::new(recv);
+        let handle = Spatial(send);
         self.seek.insert(signal);
         handle
     }
@@ -292,15 +302,16 @@ impl SpatialSceneControl {
     where
         S: Signal<Frame = Sample> + Send + 'static,
     {
-        let signal = Box::new(SpatialSignalBuffered::new(
+        let (send, recv) = SpatialSignalBuffered::new(
             rate,
             signal,
             options.position,
             options.velocity,
             max_distance / SPEED_OF_SOUND + buffer_duration,
             options.radius,
-        ));
-        let handle = Spatial(signal.common.motion.clone());
+        );
+        let signal = Box::new(recv);
+        let handle = Spatial(send);
         self.buffered.insert(signal);
         handle
     }
@@ -310,9 +321,7 @@ impl SpatialSceneControl {
     /// An unrotated listener faces -Z, with +X to the right and +Y up.
     pub fn set_listener_rotation(&mut self, rotation: mint::Quaternion<f32>) {
         let signal_rotation = invert_quat(&rotation);
-        unsafe {
-            *self.rot.pending() = signal_rotation;
-        }
+        *self.rot.pending() = signal_rotation;
         self.rot.flush();
     }
 }
@@ -347,7 +356,7 @@ impl Signal for SpatialScene {
         set.update();
 
         // Update listener rotation
-        let (prev_rot, rot) = unsafe {
+        let (prev_rot, rot) = {
             let prev = *self.rot.received();
             self.rot.refresh();
             (prev, *self.rot.received())
