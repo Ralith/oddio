@@ -1,5 +1,8 @@
 use alloc::{boxed::Box, sync::Arc};
-use core::ops::{Index, IndexMut};
+use core::{
+    ops::{Index, IndexMut},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use crate::{
     math::{add, dot, invert_quat, mix, norm, rotate, scale, sub, Float},
@@ -32,15 +35,16 @@ impl<T> SpatialSignalBuffered<T> {
         velocity: mint::Vector3<f32>,
         max_delay: f32,
         radius: f32,
-    ) -> (swap::Sender<Motion>, Self) {
+    ) -> (swap::Sender<Motion>, Arc<AtomicBool>, Self) {
         let mut queue = Ring::new((max_delay * rate as f32).ceil() as usize + 1);
         queue.delay(
             rate,
             (norm(position.into()) / SPEED_OF_SOUND).min(max_delay),
         );
-        let (send, recv) = Common::new(radius, position, velocity);
+        let (send, finished, recv) = Common::new(radius, position, velocity);
         (
             send,
+            finished,
             Self {
                 rate,
                 max_delay,
@@ -64,10 +68,11 @@ impl<T> SpatialSignal<T> {
         position: mint::Point3<f32>,
         velocity: mint::Vector3<f32>,
         radius: f32,
-    ) -> (swap::Sender<Motion>, Self) {
-        let (send, recv) = Common::new(radius, position, velocity);
+    ) -> (swap::Sender<Motion>, Arc<AtomicBool>, Self) {
+        let (send, finished, recv) = Common::new(radius, position, velocity);
         (
             send,
+            finished,
             Self {
                 common: recv,
                 inner,
@@ -82,7 +87,7 @@ struct Common {
     state: State,
     /// How long ago the signal finished, if it did
     finished_for: Option<f32>,
-    stopped: bool,
+    stopped: Arc<AtomicBool>,
 }
 
 impl Common {
@@ -90,7 +95,8 @@ impl Common {
         radius: f32,
         position: mint::Point3<f32>,
         velocity: mint::Vector3<f32>,
-    ) -> (swap::Sender<Motion>, Self) {
+    ) -> (swap::Sender<Motion>, Arc<AtomicBool>, Self) {
+        let finished = Arc::new(AtomicBool::new(false));
         let (send, recv) = swap::swap(|| Motion {
             position,
             velocity,
@@ -98,19 +104,23 @@ impl Common {
         });
         (
             send,
+            finished.clone(),
             Self {
                 radius,
                 motion: recv,
                 state: State::new(position),
                 finished_for: None,
-                stopped: false,
+                stopped: finished,
             },
         )
     }
 }
 
 /// Control for updating the motion of a spatial signal
-pub struct Spatial(swap::Sender<Motion>);
+pub struct Spatial {
+    motion: swap::Sender<Motion>,
+    finished: Arc<AtomicBool>,
+}
 
 impl Spatial {
     /// Update the position and velocity of the signal
@@ -130,12 +140,19 @@ impl Spatial {
         velocity: mint::Vector3<f32>,
         discontinuity: bool,
     ) {
-        *self.0.pending() = Motion {
+        *self.motion.pending() = Motion {
             position,
             velocity,
             discontinuity,
         };
-        self.0.flush();
+        self.motion.flush();
+    }
+
+    /// Whether the signal has completed and can no longer be heard
+    ///
+    /// Accounts for signals still audible due to propagation delay.
+    pub fn is_finished(&self) -> bool {
+        self.finished.load(Ordering::Relaxed)
     }
 }
 
@@ -227,7 +244,7 @@ fn walk_set<T, U>(
         match common.finished_for {
             Some(t) => {
                 if t > distance / SPEED_OF_SOUND {
-                    common.stopped = true;
+                    common.stopped.store(true, Ordering::Relaxed);
                 } else {
                     common.finished_for = Some(t + elapsed);
                 }
@@ -238,7 +255,7 @@ fn walk_set<T, U>(
                 }
             }
         }
-        if get_common(signal).stopped {
+        if get_common(signal).stopped.load(Ordering::Relaxed) {
             set.remove(i);
             continue;
         }
@@ -273,10 +290,13 @@ impl SpatialSceneControl {
     where
         S: Seek<Frame = Sample> + Send + 'static,
     {
-        let (send, recv) =
+        let (send, finished, recv) =
             SpatialSignal::new(signal, options.position, options.velocity, options.radius);
         let signal = Box::new(recv);
-        let handle = Spatial(send);
+        let handle = Spatial {
+            motion: send,
+            finished,
+        };
         self.seek.insert(signal);
         handle
     }
@@ -302,7 +322,7 @@ impl SpatialSceneControl {
     where
         S: Signal<Frame = Sample> + Send + 'static,
     {
-        let (send, recv) = SpatialSignalBuffered::new(
+        let (send, finished, recv) = SpatialSignalBuffered::new(
             rate,
             signal,
             options.position,
@@ -311,7 +331,10 @@ impl SpatialSceneControl {
             options.radius,
         );
         let signal = Box::new(recv);
-        let handle = Spatial(send);
+        let handle = Spatial {
+            motion: send,
+            finished,
+        };
         self.buffered.insert(signal);
         handle
     }
