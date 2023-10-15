@@ -34,6 +34,13 @@ impl Mixed {
     pub fn stop(&mut self) {
         self.0.store(true, Ordering::Relaxed);
     }
+
+    /// Whether the signal's playback
+    ///
+    /// Set by both `is_stopped` and signals naturally finishing.
+    pub fn is_stopped(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
 }
 
 struct MixedSignal<T: ?Sized> {
@@ -93,6 +100,7 @@ impl<T: Frame> Signal for Mixer<T> {
         for i in (0..this.set.len()).rev() {
             let signal = &mut this.set[i];
             if signal.stop.load(Ordering::Relaxed) || signal.inner.is_finished() {
+                signal.stop.store(true, Ordering::Relaxed);
                 this.set.remove(i);
                 continue;
             }
@@ -112,3 +120,29 @@ impl<T: Frame> Signal for Mixer<T> {
 }
 
 type ErasedSignal<T> = Box<MixedSignal<dyn Signal<Frame = T>>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Frames, FramesSignal};
+
+    #[test]
+    fn is_stopped() {
+        let (mut mixer_control, mut mixer) = Mixer::new();
+        let (_, signal) = FramesSignal::new(Frames::from_slice(1, &[0.0, 0.0]), 0.0);
+        let handle = mixer_control.play(signal);
+        assert!(!handle.is_stopped());
+
+        let mut out = [0.0];
+
+        mixer.sample(0.6, &mut out);
+        assert!(!handle.is_stopped());
+
+        mixer.sample(0.6, &mut out);
+        // Signal is finished, but we won't actually notice until the next scan
+        assert!(!handle.is_stopped());
+
+        mixer.sample(0.0, &mut out);
+        assert!(handle.is_stopped());
+    }
+}
