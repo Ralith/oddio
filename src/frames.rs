@@ -196,7 +196,7 @@ impl<T: Frame + Copy> Signal for FramesSignal<T> {
 
     #[inline]
     fn is_finished(&self) -> bool {
-        self.t >= self.data.samples.len() as f64 / self.data.rate
+        self.t >= (self.data.samples.len() - 1) as f64 / self.data.rate
     }
 }
 
