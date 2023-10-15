@@ -1,5 +1,6 @@
 use crate::alloc::{alloc, boxed::Box, sync::Arc};
 use core::{
+    convert::TryFrom,
     mem,
     ops::{Deref, DerefMut},
     ptr,
@@ -153,12 +154,17 @@ impl<T> FramesSignal<T> {
     ///
     /// `start_seconds` adjusts the initial playback position, and may be negative.
     pub fn new(data: Arc<Frames<T>>, start_seconds: f64) -> (FramesSignalControl, Self) {
+        let samples = data.len();
         let signal = Self {
             t: start_seconds,
             sample_t: Arc::new(AtomicIsize::new((start_seconds * data.rate) as isize)),
             data,
         };
-        let control = FramesSignalControl(signal.sample_t.clone(), signal.data.rate);
+        let control = FramesSignalControl {
+            samples,
+            sample_position: signal.sample_t.clone(),
+            rate: signal.data.rate,
+        };
         (control, signal)
     }
 }
@@ -214,7 +220,11 @@ impl<T> From<Arc<Frames<T>>> for FramesSignal<T> {
 }
 
 /// Thread-safe control for a [`FramesSignal`], giving access to current playback location.
-pub struct FramesSignalControl(Arc<AtomicIsize>, f64);
+pub struct FramesSignalControl {
+    samples: usize,
+    sample_position: Arc<AtomicIsize>,
+    rate: f64,
+}
 
 impl FramesSignalControl {
     /// Get the current playback position.
@@ -224,8 +234,16 @@ impl FramesSignalControl {
     ///
     /// Right now, we don't support a method to *set* the playback_position,
     /// as naively setting this variable causes audible distortions.
+    #[inline]
     pub fn playback_position(&self) -> f64 {
-        self.0.load(Ordering::Relaxed) as f64 / self.1
+        self.sample_position.load(Ordering::Relaxed) as f64 / self.rate
+    }
+
+    /// Whether the signal has finished playing
+    #[inline]
+    pub fn is_finished(&self) -> bool {
+        usize::try_from(self.sample_position.load(Ordering::Relaxed))
+            .map_or(false, |x| x >= self.samples)
     }
 }
 
@@ -264,18 +282,21 @@ mod tests {
         // negatives are fine
         let init = control.playback_position();
         assert_eq!(init, -2.0);
+        assert!(!control.is_finished());
 
         let mut buf = [0.0; 10];
 
         // get back to positive
         signal.sample(0.2, &mut buf);
         assert_eq!(0.0, control.playback_position());
+        assert!(!control.is_finished());
 
         signal.sample(0.1, &mut buf);
         assert_eq!(1.0, control.playback_position());
         signal.sample(0.1, &mut buf);
         assert_eq!(2.0, control.playback_position());
         signal.sample(0.2, &mut buf);
+        assert!(control.is_finished());
         assert_eq!(4.0, control.playback_position());
         signal.sample(0.5, &mut buf);
         assert_eq!(9.0, control.playback_position());
