@@ -584,14 +584,15 @@ impl Ear {
 
     /// Unit vector along which sound is least attenuated
     fn dir(self) -> mint::Vector3<f32> {
-        let x = 2.0f32.sqrt() / 2.0;
+        // [+-4, 0, -1] normalized
         [
             match self {
-                Ear::Left => -x,
-                Ear::Right => x,
-            },
+                Ear::Left => -1.0,
+                Ear::Right => 1.0,
+            } * 4.0
+                / 17.0f32.sqrt(),
             0.0,
-            -x,
+            -1.0 / 17.0f32.sqrt(),
         ]
         .into()
     }
